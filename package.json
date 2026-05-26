@@ -1,6 +1,6 @@
 {
   "name": "@voiden/plugin-voiden-stitch",
-  "version": "1.2.1",
+  "version": "1.2.0",
   "type": "module",
   "private": false,
   "description": "Batch-run multiple .void files as a stitch with aggregated assertion results, variable isolation, and sequential execution",
