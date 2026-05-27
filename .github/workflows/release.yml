@@ -25,4 +25,5 @@ jobs:
         with:
           files: |
             dist/voiden-stitch.js
+            src/skill.md
             manifest.json
