@@ -1,23 +1,26 @@
 {
   "id": "voiden-stitch",
   "name": "Voiden Stitch",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "voidenVersion": ">=2.0.0",
   "description": "Batch-run multiple .void files as a stitch with aggregated assertion results, variable isolation, and sequential execution",
   "author": "Voiden Team",
-  "enabled": true,
   "priority": 35,
   "readme": "Define a stitch to batch-run multiple .void files using the /stitch slash command. Configure file patterns, exclusions, and run options. Results are shown in a dedicated sidebar tab with per-file pass/fail, assertion counts, and timing.",
   "capabilities": {
     "blocks": {
-      "owns": ["stitch"],
+      "owns": [
+        "stitch"
+      ],
       "allowExtensions": false
     },
     "slashCommands": {
       "groups": [
         {
           "name": "Stitch",
-          "commands": ["Insert Stitch Runner"]
+          "commands": [
+            "Insert Stitch Runner"
+          ]
         }
       ]
     },
