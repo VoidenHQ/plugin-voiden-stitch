@@ -1,0 +1,50 @@
+[
+  {
+    "version": "v1.2.3",
+    "date": "29/05/2026",
+    "title": "Build Fix",
+    "changes": {
+      "Fixed": [
+        "Remove catch-all shim from build pipeline for correct dependency bundling"
+      ]
+    }
+  },
+  {
+    "version": "v1.2.1",
+    "date": "27/05/2026",
+    "title": "Stability Update",
+    "changes": {
+      "Fixed": [
+        "Removed catch-all shim block",
+        "Linked block resolution no longer fails when a referenced file is renamed"
+      ]
+    }
+  },
+  {
+    "version": "v1.2.0",
+    "date": "20/04/2026",
+    "title": "Chained Requests",
+    "changes": {
+      "Added": [
+        "Chain requests: pass response values from one request into the next",
+        "JSONPath extractor for chained variable binding"
+      ],
+      "Improved": [
+        "Stitch block UI with clearer connection indicators"
+      ]
+    }
+  },
+  {
+    "version": "v1.0.0",
+    "date": "01/04/2026",
+    "title": "Initial Release",
+    "description": "Link and compose .void files for multi-step API flows.",
+    "changes": {
+      "Added": [
+        "Link .void files together into a flow",
+        "Sequential and parallel execution modes",
+        "Shared environment context across stitched files"
+      ]
+    }
+  }
+]
