@@ -198,6 +198,9 @@ export async function runStitch(
         if (content == null) {
           throw new Error(`Could not read file: ${file.source}`);
         }
+        if (content === '') {
+          throw new Error(`File is empty (no requests): ${file.source}`);
+        }
 
         // Parse to ProseMirror doc using the full schema (preserves UIDs for linked blocks)
         let docJson = parseMarkdown(content, schema);

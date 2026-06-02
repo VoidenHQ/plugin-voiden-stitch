@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.2.2",
+    "date": "02/06/2026",
+    "title": "Empty File & Discovery Fixes",
+    "changes": {
+      "Fixed": [
+        "Empty .void files no longer trigger a misleading 'Could not read file' error — they now report 'File is empty (no requests)' and are recorded as skipped",
+        "File discovery count in the Stitch block now refreshes automatically when files are added or removed from the project folder"
+      ]
+    }
+  },
+  {
     "version": "v1.2.1",
     "date": "02/06/2026",
     "title": "Stability & Bug Fixes",

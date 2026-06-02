@@ -70,8 +70,17 @@ export function createStitchNode(
     const [isRunning, setIsRunning] = useState(false);
     const runningRef = useRef(false); // track if THIS block started the run
     const abortRef = useRef<AbortController | null>(null);
+    const [refreshTick, setRefreshTick] = useState(0);
 
-    // Discover matched files when patterns change
+    // Re-discover when files are added/removed in the project
+    useEffect(() => {
+      const unsub = (window as any).electron?.files?.onReferencesUpdated?.(() => {
+        setRefreshTick(t => t + 1);
+      });
+      return () => unsub?.();
+    }, []);
+
+    // Discover matched files when patterns change or project files change
     useEffect(() => {
       let cancelled = false;
       const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment };
@@ -86,7 +95,7 @@ export function createStitchNode(
       });
 
       return () => { cancelled = true; };
-    }, [include, exclude, editor]);
+    }, [include, exclude, editor, refreshTick]);
 
     // Pattern management
     const addPattern = useCallback((type: 'include' | 'exclude') => {
