@@ -9,6 +9,21 @@ import type { StitchConfig, StitchFileResult, StitchSectionResult, AssertionResu
 import { stitchStore } from './stitchStore';
 import { Editor, getSchema } from '@tiptap/core';
 
+/**
+ * Compute a forward-slash relative path from an absolute source path and a project root.
+ * Normalizes separators before comparing so mixed-separator paths on Windows don't fall back
+ * to just the filename. The project root must NOT have a trailing separator.
+ */
+function makeRelativePath(source: string, projectPath: string): string {
+  const normalizedSource = source.replace(/\\/g, '/');
+  const normalizedProject = projectPath.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (normalizedProject && normalizedSource.startsWith(normalizedProject + '/')) {
+    return normalizedSource.slice(normalizedProject.length + 1);
+  }
+  // Fallback: just the filename
+  return source.split(/[/\\]/).pop() || source;
+}
+
 /** Minimal glob matcher supporting * and ** patterns. */
 function matchGlob(pattern: string, filePath: string): boolean {
   // Normalize separators
@@ -81,13 +96,14 @@ export async function runStitch(
   const projectPath = projects?.activeProject || '';
 
   // Build relative paths and filter
+  // Normalize currentFilePath separators so the exclusion works even when the store
+  // returns a forward-slash path on Windows while getVoidFiles returns backslashes.
+  const normalizedCurrentFilePath = currentFilePath.replace(/\\/g, '/');
   const candidates = allFiles
-    .filter((f: any) => f.source !== currentFilePath)
+    .filter((f: any) => f.source.replace(/\\/g, '/') !== normalizedCurrentFilePath)
     .map((f: any) => ({
       ...f,
-      relativePath: f.source.startsWith(projectPath)
-        ? f.source.slice(projectPath.length + 1).replace(/\\/g, '/')
-        : f.title,
+      relativePath: makeRelativePath(f.source, projectPath),
     }));
 
   const matchedFiles = candidates.filter((f: any) => {
@@ -102,9 +118,7 @@ export async function runStitch(
   // Build a map of all void files by relative path for linked block resolution
   const allVoidFilesByPath = new Map<string, any>();
   for (const f of allFiles) {
-    const rel = f.source.startsWith(projectPath)
-      ? f.source.slice(projectPath.length + 1).replace(/\\/g, '/')
-      : f.title;
+    const rel = makeRelativePath(f.source, projectPath);
     allVoidFilesByPath.set(rel, f);
     // Also index by absolute source path
     allVoidFilesByPath.set(f.source, f);
@@ -176,11 +190,12 @@ export async function runStitch(
 
       try {
         // Read file content (use the content from getVoidFiles if available)
-        let content = file.content;
-        if (!content) {
-          content = await (window as any).electron?.files?.read?.(file.source);
+        // Use null/undefined check (not falsy) so empty files don't trigger a spurious error.
+        let content: string | null = file.content ?? null;
+        if (content == null) {
+          content = await (window as any).electron?.files?.read?.(file.source) ?? null;
         }
-        if (!content) {
+        if (content == null) {
           throw new Error(`Could not read file: ${file.source}`);
         }
 
@@ -609,13 +624,12 @@ export async function discoverFiles(
   const projects = await (window as any).electron?.state?.getProjects?.();
   const projectPath = projects?.activeProject || '';
 
+  const normalizedCurrentFilePathDiscover = currentFilePath.replace(/\\/g, '/');
   const candidates = allFiles
-    .filter((f: any) => f.source !== currentFilePath)
+    .filter((f: any) => f.source.replace(/\\/g, '/') !== normalizedCurrentFilePathDiscover)
     .map((f: any) => ({
       source: f.source,
-      relativePath: f.source.startsWith(projectPath)
-        ? f.source.slice(projectPath.length + 1).replace(/\\/g, '/')
-        : f.title,
+      relativePath: makeRelativePath(f.source, projectPath),
     }));
 
   const matched = candidates.filter((f) => {

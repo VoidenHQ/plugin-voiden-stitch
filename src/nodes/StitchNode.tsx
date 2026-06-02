@@ -121,10 +121,12 @@ export function createStitchNode(
 
         if (!selectedPath) return;
 
-        // Convert absolute path to project-relative glob
-        let relativePath = selectedPath;
-        if (selectedPath.startsWith(projectPath)) {
-          relativePath = selectedPath.slice(projectPath.length + 1).replace(/\\/g, '/');
+        // Convert absolute path to project-relative glob (normalize separators for Windows)
+        const normalizedSelected = selectedPath.replace(/\\/g, '/');
+        const normalizedProject = projectPath.replace(/\\/g, '/').replace(/\/+$/, '');
+        let relativePath = normalizedSelected;
+        if (normalizedProject && normalizedSelected.startsWith(normalizedProject + '/')) {
+          relativePath = normalizedSelected.slice(normalizedProject.length + 1);
         }
         // Add /**/*.void to include all void files recursively
         const pattern = relativePath ? `${relativePath}/**/*.void` : '**/*.void';
