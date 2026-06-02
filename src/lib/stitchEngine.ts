@@ -7,6 +7,7 @@
 
 import type { StitchConfig, StitchFileResult, StitchSectionResult, AssertionResult } from './types';
 import { stitchStore } from './stitchStore';
+import { Editor, getSchema } from '@tiptap/core';
 
 /** Minimal glob matcher supporting * and ** patterns. */
 function matchGlob(pattern: string, filePath: string): boolean {
@@ -72,7 +73,6 @@ export async function runStitch(
   const pluginExtensions = pluginsMod.useEditorEnhancementStore?.getState?.()?.voidenExtensions || [];
   const allExtensions = [...voidenExtensions, ...pluginExtensions];
 
-  const { Editor, getSchema } = await import('@tiptap/core');
   const schema = getSchema(allExtensions);
 
   // 2. Discover files

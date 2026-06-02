@@ -1,32 +1,15 @@
 [
   {
-    "version": "v1.2.4",
-    "date": "02/06/2026",
-    "title": "HTTP Status Fix",
-    "changes": {
-      "Fixed": [
-        "4xx and 5xx HTTP responses now correctly marked as failed — previously showed a green pass badge"
-      ]
-    }
-  },
-  {
-    "version": "v1.2.3",
-    "date": "29/05/2026",
-    "title": "Build Fix",
-    "changes": {
-      "Fixed": [
-        "Remove catch-all shim from build pipeline for correct dependency bundling"
-      ]
-    }
-  },
-  {
     "version": "v1.2.1",
-    "date": "27/05/2026",
-    "title": "Stability Update",
+    "date": "02/06/2026",
+    "title": "Stability & Bug Fixes",
     "changes": {
       "Fixed": [
-        "Removed catch-all shim block",
-        "Linked block resolution no longer fails when a referenced file is renamed"
+        "4xx and 5xx HTTP responses now correctly marked as failed at both file and section level",
+        "Section-level status dot and pass/fail badge now reflect HTTP error status",
+        "getSchema bundled correctly — stitch runner no longer crashes on execute",
+        "Linked block resolution no longer fails when a referenced file is renamed",
+        "Removed catch-all shim for correct dependency bundling"
       ]
     }
   },

@@ -179,7 +179,8 @@ const SectionRow = ({ section, defaultExpanded }: { section: StitchSectionResult
   const [copiedReqHeaders, setCopiedReqHeaders] = useState(false);
   const [copiedResHeaders, setCopiedResHeaders] = useState(false);
   const hasAssertions = section.assertions.results.length > 0;
-  const hasFailed = section.assertions.failed > 0 || !!section.error;
+  const httpFailed = section.status !== null && section.status >= 400;
+  const hasFailed = section.assertions.failed > 0 || !!section.error || httpFailed;
   const hasDetails = hasAssertions || !!section.error || !!section.requestInfo || !!section.responseInfo;
   const borderColor = hasFailed ? 'var(--error, #f87171)' : section.error ? 'var(--warning, #facc15)' : 'var(--success, #4ade80)';
 
@@ -196,7 +197,7 @@ const SectionRow = ({ section, defaultExpanded }: { section: StitchSectionResult
             : <ChevronRight size={12} className="text-comment flex-shrink-0" />
         ) : <div className="w-3 flex-shrink-0" />}
 
-        <StatusDot status={section.error ? 'error' : section.assertions.failed > 0 ? 'failed' : 'passed'} size={6} />
+        <StatusDot status={section.error ? 'error' : hasFailed ? 'failed' : 'passed'} size={6} />
 
         <span className="font-mono text-[11px] font-bold flex-shrink-0">
           {section.status || '—'}
@@ -213,7 +214,7 @@ const SectionRow = ({ section, defaultExpanded }: { section: StitchSectionResult
         </span>
 
         {hasAssertions && (
-          <span className={`text-[10px] font-mono flex-shrink-0 ${section.assertions.failed > 0 ? 'text-red-400' : 'text-green-400'}`}>
+          <span className={`text-[10px] font-mono flex-shrink-0 ${hasFailed ? 'text-red-400' : 'text-green-400'}`}>
             {section.assertions.passed}/{section.assertions.total}
           </span>
         )}
