@@ -240,7 +240,8 @@ export async function runStitch(
 
               // Extract assertion results from response metadata
               const assertionResults = extractAssertionResults(response);
-              const sectionFailed = assertionResults.failed > 0 || !!response?.error;
+              const httpStatus: number | null = response?.status ?? response?.statusCode ?? response?.httpStatus ?? null;
+              const sectionFailed = assertionResults.failed > 0 || !!response?.error || (httpStatus !== null && httpStatus >= 400);
               if (sectionFailed) hasFailedAssertion = true;
 
               // Extract request/response details for inspection
