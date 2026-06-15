@@ -36,6 +36,7 @@ const ADDITIONAL_SHIMS = {
   'react-markdown': "const _s=window.__voiden_shims__['react-markdown']||{};export default _s?.default??_s;",
   'remark-gfm': "const _s=window.__voiden_shims__['remark-gfm']||{};export default _s?.default??_s;",
   'buffer': "export const Buffer=globalThis.Buffer;export default{Buffer:globalThis.Buffer};",
+  'yaml': "const _s=window.__voiden_shims__['yaml']||{};export default _s;export const {parse,stringify,parseDocument,Document,isDocument,isMap,isPair,isScalar,isSeq,visit}=_s;",
 }
 Object.assign(STATIC_SHIMS, ADDITIONAL_SHIMS)
 

@@ -1,5 +1,22 @@
 [
   {
+    "version": "v1.3.0",
+    "date": "15/06/2026",
+    "title": "Scenario Variables & File Support",
+    "changes": {
+      "Added": [
+        "Scenario variables: define key-value pairs per scenario to substitute {{VAR}} references in URLs, headers, body, query params, and path params at run time",
+        "File-type scenario variables: mark a variable as 'file' to pick a project-relative file path via native browser — used for binary uploads and multipart form fields",
+        "File path variables are stored relative to the project root so stitch configs are portable across machines",
+        "Scenario variables are substituted in binary (restFile) and multipart body_params so different files can be uploaded per scenario without editing the .void file",
+        "Results panel now shows a scenario vars pill on each file row — click to expand and inspect the exact key=value pairs used for that run"
+      ],
+      "Fixed": [
+        "Newly added scenarios were not picked up when running the stitch — handleRun now re-captures scenario state reactively so changes are reflected immediately without re-opening the block"
+      ]
+    }
+  },
+  {
     "version": "v1.2.2",
     "date": "02/06/2026",
     "title": "Empty File & Discovery Fixes",

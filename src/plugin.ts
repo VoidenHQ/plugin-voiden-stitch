@@ -30,11 +30,11 @@ export default function createVoidenStitchPlugin(context: CorePluginContext) {
             context.ui.openRightPanel();
           }
 
-          // Switch to the first (response) tab
+          // Activate the responsePanel tab specifically (not just the first tab)
           const tabs = await (window as any).electron?.sidebar?.getTabs?.("right");
-          const firstTab = (tabs?.tabs as any[])?.[0];
-          if (firstTab) {
-            await (window as any).electron?.sidebar?.activateTab?.("right", firstTab.id);
+          const responsePanelTab = (tabs?.tabs as any[])?.find((t: any) => t.type === 'responsePanel');
+          if (responsePanelTab) {
+            await (window as any).electron?.sidebar?.activateTab?.("right", responsePanelTab.id);
           }
         } catch { /* best effort */ }
       };
@@ -91,13 +91,24 @@ export default function createVoidenStitchPlugin(context: CorePluginContext) {
         ],
       });
 
-      // 6. Expose StitchResultsSidebar and stitchStore for the response panel to use
+      // 6. Register this plugin's results section in the response panel (generic registry —
+      //    no plugin ID is hardcoded in ResponsePanelContainer).
       const { StitchResultsSidebar } = await import('./components/StitchResultsSidebar');
       const { stitchStore } = await import('./lib/stitchStore');
-      context.exposeHelpers({
-        StitchResultsSidebar,
-        stitchStore,
-      } as any);
+
+      // Still expose helpers so other plugins can access stitchStore via context.helpers.from()
+      context.exposeHelpers({ StitchResultsSidebar, stitchStore } as any);
+
+      (context as any).registerResponsePanelSection({
+        id: 'stitch-runner',
+        label: 'Stitch Runner',
+        component: StitchResultsSidebar,
+        hasResults: (tabId: string | undefined) => {
+          const run = stitchStore.getRun(tabId);
+          return run.status !== 'idle' && !!run.id;
+        },
+        subscribe: (listener: () => void) => stitchStore.subscribe(listener),
+      });
     },
 
     onunload: async () => {

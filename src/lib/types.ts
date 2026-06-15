@@ -16,6 +16,13 @@ export interface StitchConfig {
   isolateFiles: boolean;
   /** Environment to use (empty = active environment) */
   environment: string;
+  /** Project-relative path to a CSV/JSON/YAML scenario data file. When set, all matched
+   *  files are run once per scenario row with the row's variables merged into the active env. */
+  dataSource: string;
+  /** JSON-serialised inline scenario rows defined directly in the block.
+   *  Format: Array<{id,name,enabled,variables:[{key,value}]}>
+   *  These are run in addition to (and before) any data source file rows. */
+  scenarios: string;
 }
 
 /** Result for a single request section within a file */
@@ -70,6 +77,8 @@ export interface StitchFileResult {
     passed: number;
     failed: number;
   };
+  /** Scenario-specific variables used for this run (excludes base env). */
+  scenarioVars?: Record<string, string>;
 }
 
 /** Overall stitch run state */

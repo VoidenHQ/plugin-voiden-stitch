@@ -460,7 +460,10 @@ const SectionRow = ({ section, defaultExpanded }: { section: StitchSectionResult
 /** Collapsible file row — matches the response panel multi-section header style. */
 const FileRow = ({ file, defaultExpanded, onOpenFile }: { file: StitchFileResult; defaultExpanded?: boolean; onOpenFile?: (path: string) => void }) => {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
+  const [varsOpen, setVarsOpen] = useState(false);
   const hasDetails = file.sections.length > 0 || !!file.error;
+  const vars = file.scenarioVars;
+  const varEntries = vars ? Object.entries(vars) : [];
 
   useEffect(() => {
     setExpanded(defaultExpanded ?? false);
@@ -495,6 +498,21 @@ const FileRow = ({ file, defaultExpanded, onOpenFile }: { file: StitchFileResult
           ) : file.fileName}
         </span>
 
+        {/* Scenario vars pill */}
+        {varEntries.length > 0 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setVarsOpen((v) => !v); }}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-active text-[10px] font-mono text-comment hover:text-accent hover:border-accent transition-colors flex-shrink-0"
+            title="Scenario variables"
+            style={{ cursor: 'pointer' }}
+          >
+            {varEntries.length === 1
+              ? <span className="text-accent">{varEntries[0][0]}</span>
+              : <span>{varEntries.length} vars</span>}
+            {varsOpen ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+          </button>
+        )}
+
         {file.assertions.total > 0 && (
           <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${
             file.assertions.failed > 0 ? 'text-red-400' : 'text-green-400'
@@ -509,6 +527,22 @@ const FileRow = ({ file, defaultExpanded, onOpenFile }: { file: StitchFileResult
           </span>
         )}
       </div>
+
+      {/* Scenario vars dropdown */}
+      {varsOpen && varEntries.length > 0 && (
+        <div className="border-b border-border bg-panel px-3 py-1.5">
+          <div className="text-[9px] text-comment uppercase font-semibold mb-1 tracking-wide">Scenario variables</div>
+          <div className="space-y-0.5">
+            {varEntries.map(([k, v]) => (
+              <div key={k} className="flex items-center gap-2 text-[10px] font-mono">
+                <span className="text-accent flex-shrink-0">{k}</span>
+                <span className="text-comment flex-shrink-0">=</span>
+                <span className="text-text truncate">{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Sections — expand to show per-section results */}
       {expanded && (

@@ -62,12 +62,83 @@ export function createStitchNode(
     const isolateFiles = node.attrs.isolateFiles === true || node.attrs.isolateFiles === 'true';
     const delayBetweenFiles = parseInt(node.attrs.delayBetweenFiles || '0', 10) || 0;
     const environment = node.attrs.environment || '';
+    const dataSource = node.attrs.dataSource || '';
+
+    interface InlineVar { key: string; value: string; type?: 'string' | 'file' }
+    interface InlineScenario { id: string; name: string; enabled: boolean; variables: InlineVar[] }
+    const scenarios: InlineScenario[] = useMemo(() => {
+      try { return JSON.parse(node.attrs.scenarios || '[]'); }
+      catch { return []; }
+    }, [node.attrs.scenarios]);
+
+    const saveScenarios = useCallback((updated: InlineScenario[]) => {
+      updateAttributes({ scenarios: JSON.stringify(updated) });
+    }, [updateAttributes]);
+
+    const addScenario = useCallback(() => {
+      const id = Math.random().toString(36).slice(2);
+      saveScenarios([...scenarios, { id, name: `Scenario ${scenarios.length + 1}`, enabled: true, variables: [] }]);
+      setExpandedScenario(id);
+    }, [scenarios, saveScenarios]);
+
+    const removeScenario = useCallback((id: string) => {
+      saveScenarios(scenarios.filter(s => s.id !== id));
+    }, [scenarios, saveScenarios]);
+
+    const updateScenario = useCallback((id: string, patch: Partial<InlineScenario>) => {
+      saveScenarios(scenarios.map(s => s.id === id ? { ...s, ...patch } : s));
+    }, [scenarios, saveScenarios]);
+
+    const addVar = useCallback((scenarioId: string) => {
+      saveScenarios(scenarios.map(s =>
+        s.id === scenarioId ? { ...s, variables: [...s.variables, { key: '', value: '', type: 'string' as const }] } : s
+      ));
+    }, [scenarios, saveScenarios]);
+
+    const updateVar = useCallback((scenarioId: string, idx: number, patch: Partial<InlineVar>) => {
+      saveScenarios(scenarios.map(s =>
+        s.id === scenarioId ? { ...s, variables: s.variables.map((v, i) => i === idx ? { ...v, ...patch } : v) } : s
+      ));
+    }, [scenarios, saveScenarios]);
+
+    const removeVar = useCallback((scenarioId: string, idx: number) => {
+      saveScenarios(scenarios.map(s =>
+        s.id === scenarioId ? { ...s, variables: s.variables.filter((_, i) => i !== idx) } : s
+      ));
+    }, [scenarios, saveScenarios]);
+
+    // File picker for scenario variable values of type "file"
+    // Stores project-relative path so the config is portable across machines.
+    const handlePickVarFile = useCallback(async (scenarioId: string, vi: number) => {
+      try {
+        const projects = await (window as any).electron?.state?.getProjects?.();
+        const projectPath = projects?.activeProject;
+
+        const [selectedPath] = (await (window as any).electron?.dialog?.openFile?.({
+          defaultPath: projectPath,
+          properties: ['openFile'],
+        })) ?? [];
+        if (!selectedPath) return;
+
+        const normalizedSelected = selectedPath.replace(/\\/g, '/');
+        const normalizedProject = (projectPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+        let relativePath = normalizedSelected;
+        if (normalizedProject && normalizedSelected.startsWith(normalizedProject + '/')) {
+          relativePath = normalizedSelected.slice(normalizedProject.length + 1);
+        }
+
+        updateVar(scenarioId, vi, { value: relativePath });
+      } catch (err) {
+        console.error('[voiden-stitch] File picker failed:', err);
+      }
+    }, [updateVar]);
 
     // Local state
     const [matchedCount, setMatchedCount] = useState<number | null>(null);
     const [matchedFiles, setMatchedFiles] = useState<string[]>([]);
     const [showFiles, setShowFiles] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
+    const [expandedScenario, setExpandedScenario] = useState<string | null>(null);
     const runningRef = useRef(false); // track if THIS block started the run
     const abortRef = useRef<AbortController | null>(null);
     const [refreshTick, setRefreshTick] = useState(0);
@@ -83,7 +154,7 @@ export function createStitchNode(
     // Discover matched files when patterns change or project files change
     useEffect(() => {
       let cancelled = false;
-      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment };
+      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource: '', scenarios: '' };
 
       getCurrentFilePath().then((currentFilePath) => {
         return discoverFiles(config, currentFilePath);
@@ -115,6 +186,33 @@ export function createStitchNode(
       current.splice(index, 1);
       updateAttributes({ [type]: JSON.stringify(current) });
     }, [include, exclude, updateAttributes]);
+
+    // Data source file picker — stores path relative to active project root
+    const handlePickDataSource = useCallback(async () => {
+      try {
+        const projects = await (window as any).electron?.state?.getProjects?.();
+        const projectPath = projects?.activeProject;
+
+        const [selectedPath] = (await (window as any).electron?.dialog?.openFile?.({
+          defaultPath: projectPath,
+          filters: [{ name: 'Scenario Files', extensions: ['csv', 'json', 'yaml', 'yml'] }],
+          properties: ['openFile'],
+        })) ?? [];
+
+        if (!selectedPath) return;
+
+        // Convert absolute → project-relative (with forward slashes)
+        const normalizedSelected = selectedPath.replace(/\\/g, '/');
+        const normalizedProject = (projectPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+        let relativePath = normalizedSelected;
+        if (normalizedProject && normalizedSelected.startsWith(normalizedProject + '/')) {
+          relativePath = normalizedSelected.slice(normalizedProject.length + 1);
+        }
+        updateAttributes({ dataSource: relativePath });
+      } catch (err) {
+        console.error('[voiden-stitch] Data source picker failed:', err);
+      }
+    }, [updateAttributes]);
 
     // Folder picker — opens native dialog, converts to relative glob
     const handlePickFolder = useCallback(async () => {
@@ -151,7 +249,7 @@ export function createStitchNode(
     const handleRun = useCallback(async () => {
       if (runningRef.current) return;
 
-      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment };
+      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource, scenarios: JSON.stringify(scenarios) };
       const currentFilePath = await getCurrentFilePath();
 
       abortRef.current = new AbortController();
@@ -172,7 +270,7 @@ export function createStitchNode(
         setIsRunning(false);
         abortRef.current = null;
       }
-    }, [include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, editor, activeEnv, envData]);
+    }, [include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, editor, activeEnv, envData, scenarios]);
 
     const handleCancel = useCallback(() => {
       if (!runningRef.current) return;
@@ -267,6 +365,44 @@ export function createStitchNode(
                 </div>
               </div>
               <div className={rowClass}>
+                <div className={keyCellClass} style={{ width: 160 }}>Data source</div>
+                <div className={valueCellClass} style={{ gap: 4 }}>
+                  {dataSource ? (
+                    <>
+                      <span
+                        className="text-xs font-mono truncate text-text flex-1 min-w-0"
+                        title={dataSource}
+                        style={{ maxWidth: 180 }}
+                      >
+                        {dataSource.replace(/\\/g, '/').split('/').pop() || dataSource}
+                      </span>
+                      {isEditable && (
+                        <button
+                          onClick={() => updateAttributes({ dataSource: '' })}
+                          className="text-comment hover:text-red-400 transition-colors p-0.5 rounded flex-shrink-0"
+                          title="Clear data source"
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <X size={10} />
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    isEditable ? (
+                      <button
+                        onClick={handlePickDataSource}
+                        className="text-comment hover:text-accent transition-colors text-xs font-mono"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        Browse (.csv / .json / .yaml)
+                      </button>
+                    ) : (
+                      <span className="text-comment text-xs font-mono italic">None</span>
+                    )
+                  )}
+                </div>
+              </div>
+              <div className={rowClass}>
                 <div className={keyCellClass} style={{ width: 160 }}>Stop on failure</div>
                 <div className={valueCellClass}>
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -311,6 +447,221 @@ export function createStitchNode(
                   <span className="text-sm font-mono text-comment ml-1">ms</span>
                 </div>
               </div>
+            </div>
+
+            {/* Inline scenarios */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-comment font-semibold uppercase tracking-wide">Scenarios</span>
+                  {scenarios.length > 0 && (
+                    <span
+                      className="text-[9px] font-mono px-1 rounded-sm"
+                      style={{ background: 'var(--color-accent, #6366f1)22', color: 'var(--color-accent, #6366f1)' }}
+                    >
+                      {scenarios.filter(s => s.enabled).length}/{scenarios.length}
+                    </span>
+                  )}
+                </div>
+                {isEditable && (
+                  <button
+                    onClick={addScenario}
+                    className="text-comment hover:text-accent transition-colors p-0.5 rounded flex items-center gap-1 text-[10px]"
+                    title="Add scenario"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Plus size={11} />
+                    Add
+                  </button>
+                )}
+              </div>
+
+              {scenarios.length === 0 ? (
+                <div className="text-[10px] text-comment italic px-1">
+                  No scenarios — use the data source above or add rows manually
+                </div>
+              ) : (
+                <div className="border border-border rounded-md overflow-hidden divide-y divide-border">
+                  {scenarios.map((scenario, sIdx) => {
+                    const isExpanded = expandedScenario === scenario.id;
+                    const keySummary = scenario.variables
+                      .filter(v => v.key)
+                      .map(v => v.key)
+                      .slice(0, 4)
+                      .join(', ');
+                    const extraVars = scenario.variables.filter(v => v.key).length - 4;
+
+                    return (
+                      <div key={scenario.id} className={scenario.enabled ? '' : 'opacity-50'}>
+                        {/* Scenario header */}
+                        <div
+                          className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted/30 transition-colors"
+                          style={{ minHeight: 28 }}
+                        >
+                          {/* Expand/collapse toggle */}
+                          <button
+                            onClick={() => setExpandedScenario(isExpanded ? null : scenario.id)}
+                            className="text-comment hover:text-text transition-colors flex-shrink-0 flex items-center"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                          </button>
+
+                          {/* Enabled dot — click to toggle */}
+                          {isEditable ? (
+                            <button
+                              onClick={() => updateScenario(scenario.id, { enabled: !scenario.enabled })}
+                              className="flex-shrink-0 transition-colors"
+                              title={scenario.enabled ? 'Disable scenario' : 'Enable scenario'}
+                              style={{ cursor: 'pointer', lineHeight: 0 }}
+                            >
+                              <svg width="8" height="8" viewBox="0 0 8 8">
+                                <circle
+                                  cx="4" cy="4" r="3.5"
+                                  fill={scenario.enabled ? 'var(--icon-success, #22c55e)' : 'transparent'}
+                                  stroke={scenario.enabled ? 'var(--icon-success, #22c55e)' : 'currentColor'}
+                                  strokeWidth="1"
+                                  className="text-comment"
+                                />
+                              </svg>
+                            </button>
+                          ) : (
+                            <svg width="8" height="8" viewBox="0 0 8 8" className="flex-shrink-0">
+                              <circle
+                                cx="4" cy="4" r="3.5"
+                                fill={scenario.enabled ? 'var(--icon-success, #22c55e)' : 'transparent'}
+                                stroke={scenario.enabled ? 'var(--icon-success, #22c55e)' : 'currentColor'}
+                                strokeWidth="1"
+                                className="text-comment"
+                              />
+                            </svg>
+                          )}
+
+                          {/* Scenario name */}
+                          {isEditable ? (
+                            <input
+                              type="text"
+                              value={scenario.name}
+                              onChange={(e) => updateScenario(scenario.id, { name: e.target.value })}
+                              placeholder={`Scenario ${sIdx + 1}`}
+                              className="flex-1 bg-transparent text-xs font-mono text-text outline-none min-w-0"
+                            />
+                          ) : (
+                            <span className="flex-1 text-xs font-mono text-text truncate min-w-0">{scenario.name}</span>
+                          )}
+
+                          {/* Variable key summary (collapsed only) */}
+                          {!isExpanded && keySummary && (
+                            <span
+                              className="text-[10px] font-mono text-comment truncate flex-shrink-0"
+                              style={{ maxWidth: 130 }}
+                              title={scenario.variables.filter(v => v.key).map(v => `${v.key}: ${v.value}`).join('\n')}
+                            >
+                              {keySummary}{extraVars > 0 ? ` +${extraVars}` : ''}
+                            </span>
+                          )}
+
+                          {/* Remove */}
+                          {isEditable && (
+                            <button
+                              onClick={() => removeScenario(scenario.id)}
+                              className="text-comment hover:text-red-400 transition-colors p-0.5 rounded flex-shrink-0"
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Expanded: variable table */}
+                        {isExpanded && (
+                          <div className="border border-border bg-editor">
+                            {scenario.variables.length === 0 && !isEditable && (
+                              <div className="px-3 py-2 text-[10px] text-comment italic">No variables</div>
+                            )}
+                            {scenario.variables.map((v, vi) => (
+                              <div key={vi} className="flex border border-border hover:bg-muted/20 transition-colors group">
+                                {/* Type toggle */}
+                                {isEditable && (
+                                  <button
+                                    title={v.type === 'file' ? 'Switch to string' : 'Switch to file'}
+                                    onClick={() => updateVar(scenario.id, vi, { type: v.type === 'file' ? 'string' : 'file', value: '' })}
+                                    className="flex items-center justify-center px-1.5 border-r border-border text-comment hover:text-accent transition-colors flex-shrink-0"
+                                    style={{ minHeight: 26, cursor: 'pointer' }}
+                                  >
+                                    {v.type === 'file' ? <Folder size={9} /> : <span className="text-[9px] font-mono leading-none">T</span>}
+                                  </button>
+                                )}
+                                {/* Key */}
+                                <div className="flex items-center px-2 flex-shrink-0 border-r border-border" style={{ width: 130, minHeight: 26 }}>
+                                  {isEditable ? (
+                                    <input
+                                      type="text"
+                                      value={v.key}
+                                      onChange={(e) => updateVar(scenario.id, vi, { key: e.target.value })}
+                                      placeholder="key"
+                                      className="w-full bg-transparent text-[11px] font-mono text-comment outline-none placeholder:text-comment/40"
+                                    />
+                                  ) : (
+                                    <span className="text-[11px] font-mono text-comment truncate">{v.key || '—'}</span>
+                                  )}
+                                </div>
+                                {/* Value */}
+                                <div className="flex items-center px-2 flex-1 min-w-0" style={{ minHeight: 26 }}>
+                                  {isEditable ? (
+                                    <>
+                                      <input
+                                        type="text"
+                                        value={v.value}
+                                        onChange={(e) => updateVar(scenario.id, vi, { value: e.target.value })}
+                                        placeholder={v.type === 'file' ? '/path/to/file' : 'value'}
+                                        className="flex-1 bg-transparent text-[11px] font-mono text-text outline-none placeholder:text-comment/40 min-w-0"
+                                      />
+                                      {v.type === 'file' && (
+                                        <button
+                                          title="Browse file"
+                                          onClick={() => handlePickVarFile(scenario.id, vi)}
+                                          className="text-comment hover:text-accent transition-colors p-0.5 rounded flex-shrink-0 ml-1"
+                                          style={{ cursor: 'pointer' }}
+                                        >
+                                          <FolderOpen size={9} />
+                                        </button>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-[11px] font-mono text-text truncate flex-1">{v.value || '—'}</span>
+                                  )}
+                                  {isEditable && (
+                                    <button
+                                      onClick={() => removeVar(scenario.id, vi)}
+                                      className="opacity-0 group-hover:opacity-100 text-comment hover:text-red-400 transition-all p-0.5 rounded flex-shrink-0 ml-1"
+                                      style={{ cursor: 'pointer' }}
+                                    >
+                                      <X size={9} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Add variable row */}
+                            {isEditable && (
+                              <button
+                                onClick={() => addVar(scenario.id)}
+                                className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-comment hover:text-accent hover:bg-muted/20 transition-colors border border-border"
+                                style={{ cursor: 'pointer' }}
+                              >
+                                <Plus size={9} />
+                                Add variable
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Footer — file count + play button */}
@@ -505,6 +856,16 @@ export function createStitchNode(
           default: '',
           parseHTML: (el: HTMLElement) => el.getAttribute('data-environment') || '',
           renderHTML: (attrs: any) => ({ 'data-environment': attrs.environment }),
+        },
+        dataSource: {
+          default: '',
+          parseHTML: (el: HTMLElement) => el.getAttribute('data-data-source') || '',
+          renderHTML: (attrs: any) => ({ 'data-data-source': attrs.dataSource }),
+        },
+        scenarios: {
+          default: '[]',
+          parseHTML: (el: HTMLElement) => el.getAttribute('data-scenarios') || '[]',
+          renderHTML: (attrs: any) => ({ 'data-scenarios': attrs.scenarios }),
         },
       };
     },

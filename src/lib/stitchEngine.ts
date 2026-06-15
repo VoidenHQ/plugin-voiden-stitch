@@ -128,16 +128,6 @@ export async function runStitch(
     return { matchedCount: 0 };
   }
 
-  // 3. Start run in store
-  stitchStore.startRun(
-    matchedFiles.map((f: any) => ({ filePath: f.source, fileName: f.relativePath })),
-    {
-      sourceFilePath: currentFilePath,
-      tabId: ctx.tabId,
-    },
-  );
-  ctx.openResultsTab();
-
   // 4. Snapshot runtime variables for isolation
   const variablesApi = (window as any).electron?.variables;
   let variableSnapshot: Record<string, any> = {};
@@ -166,14 +156,81 @@ export async function runStitch(
     ? ctx.allEnvs.data[config.environment]
     : ctx.activeEnv;
 
+  // Load scenario data source — each row is an env overlay applied per run
+  interface ScenarioPass { name: string; env: Record<string, string>; vars: Record<string, string> }
+  const collectedPasses: ScenarioPass[] = [];
+
+  // 1. Inline scenarios (defined directly in the block)
+  if (config.scenarios) {
+    try {
+      const rows: Array<{ id: string; name: string; enabled?: boolean; variables: Array<{ key: string; value: string }> }>
+        = JSON.parse(config.scenarios);
+      for (const row of rows) {
+        if (row.enabled === false) continue;
+        const vars = Object.fromEntries((row.variables || []).filter(v => v.key).map(v => [v.key, v.value]));
+        collectedPasses.push({ name: row.name, env: { ...(activeEnv ?? {}), ...vars }, vars });
+      }
+    } catch { /* malformed JSON — skip */ }
+  }
+
+  // 2. Data source file scenarios (CSV/JSON/YAML)
+  //    dataSource is stored as a project-relative path; resolve to absolute here.
+  if (config.dataSource) {
+    try {
+      const isAbsolute = config.dataSource.startsWith('/') || /^[A-Z]:/i.test(config.dataSource);
+      const absoluteDataSource = isAbsolute
+        ? config.dataSource
+        : `${projectPath.replace(/\/+$/, '')}/${config.dataSource}`;
+
+      const rawContent = await (window as any).electron?.files?.read?.(absoluteDataSource);
+      if (rawContent) {
+        const filename = absoluteDataSource.replace(/\\/g, '/').split('/').pop() || '';
+        const fmt = detectFormat(filename);
+        const rows = parseScenarioFile(rawContent, fmt).filter(r => r.enabled !== false);
+        for (const row of rows) {
+          collectedPasses.push({ name: row.name, env: { ...(activeEnv ?? {}), ...row.variables }, vars: row.variables });
+        }
+      }
+    } catch (err) {
+      console.warn('[voiden-stitch] Could not load data source, skipping:', err);
+    }
+  }
+
+  // Fall back to a single no-scenario pass when nothing was defined
+  let scenarioPasses: ScenarioPass[] = collectedPasses.length > 0
+    ? collectedPasses
+    : [{ name: '', env: activeEnv ?? {}, vars: {} }];
+
+  const hasScenarios = scenarioPasses.length > 1 || scenarioPasses[0]?.name !== '';
+
+  // Expand matched files × scenario passes into flat run entries
+  const runEntries = scenarioPasses.flatMap(scenario =>
+    matchedFiles.map(f => ({
+      ...f,
+      displayName: hasScenarios ? `${scenario.name} — ${f.relativePath}` : f.relativePath,
+      scenarioEnv: scenario.env,
+      scenarioVars: scenario.vars,
+    }))
+  );
+
+  // 3. Start run in store (must be after runEntries is computed)
+  stitchStore.startRun(
+    runEntries.map((e) => ({ filePath: e.source, fileName: e.displayName })),
+    {
+      sourceFilePath: currentFilePath,
+      tabId: ctx.tabId,
+    },
+  );
+  ctx.openResultsTab();
+
   try {
-    for (let fileIdx = 0; fileIdx < matchedFiles.length; fileIdx++) {
+    for (let fileIdx = 0; fileIdx < runEntries.length; fileIdx++) {
       if (signal.aborted) {
         stitchStore.cancelRun();
         break;
       }
 
-      const file = matchedFiles[fileIdx];
+      const file = runEntries[fileIdx];
       stitchStore.setFileRunning(fileIdx);
 
       // If isolateFiles, restore variables to snapshot before each file
@@ -251,7 +308,7 @@ export async function runStitch(
               useResponseStore.getState().setCurrentRequestTabId('__stitch__');
               const response = await requestOrchestrator.executeRequest(
                 headlessEditor,
-                activeEnv,
+                file.scenarioEnv,
                 signal,
                 { sectionIndex: sectionIdx },
               );
@@ -345,19 +402,20 @@ export async function runStitch(
         sections,
         error: fileError,
         assertions: fileAssertions,
+        scenarioVars: Object.keys(file.scenarioVars || {}).length > 0 ? file.scenarioVars : undefined,
       });
 
       // Stop on failure if configured
       if (config.stopOnFailure && hasFailedAssertion) {
-        // Mark remaining files as skipped
-        for (let i = fileIdx + 1; i < matchedFiles.length; i++) {
+        // Mark remaining entries as skipped
+        for (let i = fileIdx + 1; i < runEntries.length; i++) {
           stitchStore.updateFileResult(i, { status: 'skipped' });
         }
         break;
       }
 
       // Delay between files
-      if (config.delayBetweenFiles > 0 && fileIdx < matchedFiles.length - 1) {
+      if (config.delayBetweenFiles > 0 && fileIdx < runEntries.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, config.delayBetweenFiles));
       }
     }
@@ -389,7 +447,7 @@ export async function runStitch(
     }
   }
 
-  return { matchedCount: matchedFiles.length };
+  return { matchedCount: runEntries.length };
 }
 
 /** Extract assertion results from a response object. */
@@ -616,6 +674,89 @@ function findBlockByUid(doc: any, uid: string): any | null {
     }
   }
   return null;
+}
+
+// ── Scenario data source parsers (inlined to avoid Rollup TDZ from static cross-module imports) ──
+
+interface ScenarioRow { name: string; variables: Record<string, string>; enabled?: boolean }
+
+function splitCsvRow(line: string): string[] {
+  const fields: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') { inQuotes = false; }
+      else { field += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ',') { fields.push(field); field = ''; }
+      else { field += ch; }
+    }
+  }
+  fields.push(field);
+  return fields;
+}
+
+function parseCsvToScenarios(text: string): ScenarioRow[] {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = splitCsvRow(lines[0]).map(h => h.trim());
+  const nameCol = headers.findIndex(h => h.toLowerCase() === 'name' || h === '__name__');
+  return lines.slice(1).map((line, idx) => {
+    const values = splitCsvRow(line);
+    const variables: Record<string, string> = {};
+    let rowName = `Scenario ${idx + 1}`;
+    headers.forEach((key, i) => {
+      const val = (values[i] ?? '').trim();
+      if (i === nameCol) { rowName = val || rowName; }
+      else { variables[key] = val; }
+    });
+    return { name: rowName, variables };
+  });
+}
+
+function fromScenarioObject(item: Record<string, any>, idx: number): ScenarioRow {
+  const name = String(item.name ?? item.__name__ ?? `Scenario ${idx + 1}`);
+  const enabled = item.enabled !== false;
+  let variables: Record<string, string>;
+  if (item.variables && typeof item.variables === 'object' && !Array.isArray(item.variables)) {
+    variables = Object.fromEntries(Object.entries(item.variables).map(([k, v]) => [k, String(v)]));
+  } else {
+    variables = Object.fromEntries(
+      Object.entries(item).filter(([k]) => k !== 'name' && k !== '__name__' && k !== 'enabled').map(([k, v]) => [k, String(v)])
+    );
+  }
+  return { name, variables, enabled };
+}
+
+function parseJsonToScenarios(text: string): ScenarioRow[] {
+  const data = JSON.parse(text);
+  if (!Array.isArray(data)) return [];
+  return data.map((item: any, idx: number) => fromScenarioObject(item, idx));
+}
+
+function parseYamlToScenarios(text: string): ScenarioRow[] {
+  const yamlParse = (window as any).__voiden_shims__?.['yaml']?.parse;
+  if (!yamlParse) throw new Error('yaml shim not available');
+  const data = yamlParse(text);
+  if (!Array.isArray(data)) return [];
+  return data.map((item: any, idx: number) => fromScenarioObject(item, idx));
+}
+
+function detectFormat(filename: string): 'csv' | 'json' | 'yaml' {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'json') return 'json';
+  if (ext === 'yaml' || ext === 'yml') return 'yaml';
+  return 'csv';
+}
+
+function parseScenarioFile(text: string, format: 'csv' | 'json' | 'yaml'): ScenarioRow[] {
+  if (format === 'json') return parseJsonToScenarios(text);
+  if (format === 'yaml') return parseYamlToScenarios(text);
+  return parseCsvToScenarios(text);
 }
 
 /** Discover files matching config patterns without executing. Returns count. */
