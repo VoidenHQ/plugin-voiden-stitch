@@ -718,16 +718,35 @@ function parseCsvToScenarios(text: string): ScenarioRow[] {
   });
 }
 
+/**
+ * Recursively flatten a nested object into dot-notation keys.
+ * { user: { id: 1, role: 'admin' } } → { "user.id": "1", "user.role": "admin" }
+ * Arrays are JSON-stringified rather than expanded.
+ */
+function flattenObject(obj: Record<string, any>, prefix = ''): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(result, flattenObject(value as Record<string, any>, fullKey));
+    } else {
+      result[fullKey] = Array.isArray(value) ? JSON.stringify(value) : String(value ?? '');
+    }
+  }
+  return result;
+}
+
 function fromScenarioObject(item: Record<string, any>, idx: number): ScenarioRow {
   const name = String(item.name ?? item.__name__ ?? `Scenario ${idx + 1}`);
   const enabled = item.enabled !== false;
   let variables: Record<string, string>;
   if (item.variables && typeof item.variables === 'object' && !Array.isArray(item.variables)) {
-    variables = Object.fromEntries(Object.entries(item.variables).map(([k, v]) => [k, String(v)]));
+    variables = flattenObject(item.variables as Record<string, any>);
   } else {
-    variables = Object.fromEntries(
-      Object.entries(item).filter(([k]) => k !== 'name' && k !== '__name__' && k !== 'enabled').map(([k, v]) => [k, String(v)])
+    const fields = Object.fromEntries(
+      Object.entries(item).filter(([k]) => k !== 'name' && k !== '__name__' && k !== 'enabled')
     );
+    variables = flattenObject(fields);
   }
   return { name, variables, enabled };
 }
