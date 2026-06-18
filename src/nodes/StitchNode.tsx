@@ -9,7 +9,7 @@
 import { mergeAttributes, Node, NodeViewProps } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Square, Plus, X, ChevronDown, ChevronRight, Folder, FolderOpen, Loader } from 'lucide-react';
+import { Play, Plus, X, ChevronDown, ChevronRight, Folder, FolderOpen, Loader, History } from 'lucide-react';
 import type { StitchConfig } from '../lib/types';
 import { stitchStore } from '../lib/stitchStore';
 import { runStitch, discoverFiles } from '../lib/stitchEngine';
@@ -63,6 +63,11 @@ export function createStitchNode(
     const delayBetweenFiles = parseInt(node.attrs.delayBetweenFiles || '0', 10) || 0;
     const environment = node.attrs.environment || '';
     const dataSource = node.attrs.dataSource || '';
+
+    const fileOrder: string[] = useMemo(() => {
+      try { return JSON.parse(node.attrs.fileOrder || '[]'); }
+      catch { return []; }
+    }, [node.attrs.fileOrder]);
 
     interface InlineVar { key: string; value: string; type?: 'string' | 'file' }
     interface InlineScenario { id: string; name: string; enabled: boolean; variables: InlineVar[] }
@@ -142,6 +147,8 @@ export function createStitchNode(
     const runningRef = useRef(false); // track if THIS block started the run
     const abortRef = useRef<AbortController | null>(null);
     const [refreshTick, setRefreshTick] = useState(0);
+    const [dragIndex, setDragIndex] = useState<number | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
     // Re-discover when files are added/removed in the project
     useEffect(() => {
@@ -154,7 +161,7 @@ export function createStitchNode(
     // Discover matched files when patterns change or project files change
     useEffect(() => {
       let cancelled = false;
-      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource: '', scenarios: '' };
+      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource: '', scenarios: '', fileOrder };
 
       getCurrentFilePath().then((currentFilePath) => {
         return discoverFiles(config, currentFilePath);
@@ -166,7 +173,52 @@ export function createStitchNode(
       });
 
       return () => { cancelled = true; };
-    }, [include, exclude, editor, refreshTick]);
+    }, [include, exclude, fileOrder, editor, refreshTick]);
+
+    // File order management — custom mouse-event drag (bypasses TipTap/ProseMirror DnD interception)
+    const dragStateRef = useRef<{ from: number; over: number } | null>(null);
+    const fileOrderRef = useRef<string[]>(fileOrder);
+    const matchedFilesRef = useRef<string[]>(matchedFiles);
+    const updateAttributesRef = useRef(updateAttributes);
+    useEffect(() => { fileOrderRef.current = fileOrder; }, [fileOrder]);
+    useEffect(() => { matchedFilesRef.current = matchedFiles; }, [matchedFiles]);
+    useEffect(() => { updateAttributesRef.current = updateAttributes; }, [updateAttributes]);
+
+    // Document-level mouseup finalises the drag
+    useEffect(() => {
+      const onMouseUp = () => {
+        if (dragStateRef.current === null) return;
+        const { from, over } = dragStateRef.current;
+        dragStateRef.current = null;
+        setDragIndex(null);
+        setDragOverIndex(null);
+        if (from === over) return;
+        const base = fileOrderRef.current.length > 0 ? [...fileOrderRef.current] : [...matchedFilesRef.current];
+        const [moved] = base.splice(from, 1);
+        base.splice(over, 0, moved);
+        updateAttributesRef.current({ fileOrder: JSON.stringify(base) });
+      };
+      document.addEventListener('mouseup', onMouseUp);
+      return () => document.removeEventListener('mouseup', onMouseUp);
+    }, []);
+
+    const startFileDrag = useCallback((e: React.MouseEvent, i: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragStateRef.current = { from: i, over: i };
+      setDragIndex(i);
+      setDragOverIndex(i);
+    }, []);
+
+    const enterFileRow = useCallback((i: number) => {
+      if (dragStateRef.current === null) return;
+      dragStateRef.current.over = i;
+      setDragOverIndex(i);
+    }, []);
+
+    const resetFileOrder = useCallback(() => {
+      updateAttributes({ fileOrder: '[]' });
+    }, [updateAttributes]);
 
     // Pattern management
     const addPattern = useCallback((type: 'include' | 'exclude') => {
@@ -249,7 +301,7 @@ export function createStitchNode(
     const handleRun = useCallback(async () => {
       if (runningRef.current) return;
 
-      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource, scenarios: JSON.stringify(scenarios) };
+      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource, scenarios: JSON.stringify(scenarios), fileOrder };
       const currentFilePath = await getCurrentFilePath();
 
       abortRef.current = new AbortController();
@@ -270,7 +322,7 @@ export function createStitchNode(
         setIsRunning(false);
         abortRef.current = null;
       }
-    }, [include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, editor, activeEnv, envData, scenarios]);
+    }, [include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, fileOrder, editor, activeEnv, envData, scenarios]);
 
     const handleCancel = useCallback(() => {
       if (!runningRef.current) return;
@@ -708,15 +760,48 @@ export function createStitchNode(
               </button>
             </div>
 
-            {/* Matched files preview */}
+            {/* Matched files preview with drag-to-reorder */}
             {showFiles && matchedFiles.length > 0 && (
-              <div className="border border-border rounded-md bg-editor p-2 max-h-32 overflow-y-auto">
-                {matchedFiles.map((f, i) => (
-                  <div key={i} className="text-[10px] text-comment font-mono py-0.5 truncate flex items-center gap-1.5">
-                    <FileIcon />
-                    {f}
+              <div className="border border-border rounded-md bg-editor overflow-hidden">
+                {isEditable && fileOrder.length > 0 && (
+                  <div className="flex items-center justify-between px-2 py-1 border-b border-border">
+                    <span className="text-[9px] text-comment uppercase tracking-wide">Custom order</span>
+                    <button
+                      onClick={resetFileOrder}
+                      className="flex items-center gap-1 text-[9px] text-comment hover:text-red-400 transition-colors"
+                      title="Reset to alphabetical order"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <History size={8} />
+                      Reset
+                    </button>
                   </div>
-                ))}
+                )}
+                <div className="p-2 max-h-40 overflow-y-auto select-none">
+                  {matchedFiles.map((f, i) => (
+                    <div
+                      key={f}
+                      onMouseEnter={() => enterFileRow(i)}
+                      className={`relative text-[10px] text-comment font-mono py-0.5 flex items-center gap-1 rounded transition-colors${dragIndex === i ? ' bg-active' : ''}`}
+                    >
+                      {/* Drop-target underline */}
+                      {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-accent" />
+                      )}
+                      {isEditable && (
+                        <div
+                          onMouseDown={(e) => startFileDrag(e, i)}
+                          style={{ cursor: dragIndex !== null ? 'grabbing' : 'grab', lineHeight: 0 }}
+                        >
+                          <GripHandle />
+                        </div>
+                      )}
+                      <span className="text-[9px] text-comment/40 w-4 shrink-0 text-right">{i + 1}</span>
+                      <FileIcon />
+                      <span className="truncate">{f}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -730,6 +815,15 @@ export function createStitchNode(
     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 opacity-50">
       <path d="M4 1h5.5L14 5.5V14a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.5" />
       <path d="M9 1v5h5" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+
+  /** Six-dot grip handle for drag-to-reorder. */
+  const GripHandle = () => (
+    <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="flex-shrink-0 opacity-30 group-hover:opacity-60 transition-opacity">
+      <circle cx="2" cy="2" r="1" /><circle cx="6" cy="2" r="1" />
+      <circle cx="2" cy="5" r="1" /><circle cx="6" cy="5" r="1" />
+      <circle cx="2" cy="8" r="1" /><circle cx="6" cy="8" r="1" />
     </svg>
   );
 
@@ -866,6 +960,11 @@ export function createStitchNode(
           default: '[]',
           parseHTML: (el: HTMLElement) => el.getAttribute('data-scenarios') || '[]',
           renderHTML: (attrs: any) => ({ 'data-scenarios': attrs.scenarios }),
+        },
+        fileOrder: {
+          default: '[]',
+          parseHTML: (el: HTMLElement) => el.getAttribute('data-file-order') || '[]',
+          renderHTML: (attrs: any) => ({ 'data-file-order': attrs.fileOrder }),
         },
       };
     },

@@ -112,8 +112,18 @@ export async function runStitch(
     return included && !excluded;
   });
 
-  // Sort alphabetically by relative path for deterministic ordering
-  matchedFiles.sort((a: any, b: any) => a.relativePath.localeCompare(b.relativePath));
+  // Sort: honour explicit fileOrder first, remaining files alphabetically
+  if (config.fileOrder && config.fileOrder.length > 0) {
+    const orderMap = new Map(config.fileOrder.map((p, i) => [p, i]));
+    matchedFiles.sort((a: any, b: any) => {
+      const ai = orderMap.has(a.relativePath) ? orderMap.get(a.relativePath)! : Infinity;
+      const bi = orderMap.has(b.relativePath) ? orderMap.get(b.relativePath)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      return a.relativePath.localeCompare(b.relativePath);
+    });
+  } else {
+    matchedFiles.sort((a: any, b: any) => a.relativePath.localeCompare(b.relativePath));
+  }
 
   // Build a map of all void files by relative path for linked block resolution
   const allVoidFilesByPath = new Map<string, any>();
@@ -801,8 +811,18 @@ export async function discoverFiles(
     return included && !excluded;
   });
 
-  return {
-    count: matched.length,
-    files: matched.map((f) => f.relativePath).sort(),
-  };
+  const sorted = matched.map((f) => f.relativePath);
+  if (config.fileOrder && config.fileOrder.length > 0) {
+    const orderMap = new Map(config.fileOrder.map((p, i) => [p, i]));
+    sorted.sort((a, b) => {
+      const ai = orderMap.has(a) ? orderMap.get(a)! : Infinity;
+      const bi = orderMap.has(b) ? orderMap.get(b)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b);
+    });
+  } else {
+    sorted.sort();
+  }
+
+  return { count: sorted.length, files: sorted };
 }

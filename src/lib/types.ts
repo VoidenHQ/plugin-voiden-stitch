@@ -23,6 +23,9 @@ export interface StitchConfig {
    *  Format: Array<{id,name,enabled,variables:[{key,value}]}>
    *  These are run in addition to (and before) any data source file rows. */
   scenarios: string;
+  /** Explicit execution order — relative paths of matched files in the desired run order.
+   *  Files listed here run first in this order; any remaining matched files run alphabetically after. */
+  fileOrder: string[];
 }
 
 /** Result for a single request section within a file */
