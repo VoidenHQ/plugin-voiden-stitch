@@ -61,6 +61,7 @@ export function createStitchNode(
     const stopOnFailure = node.attrs.stopOnFailure === true || node.attrs.stopOnFailure === 'true';
     const isolateFiles = node.attrs.isolateFiles === true || node.attrs.isolateFiles === 'true';
     const delayBetweenFiles = parseInt(node.attrs.delayBetweenFiles || '0', 10) || 0;
+    const parallel = node.attrs.parallel === true || node.attrs.parallel === 'true';
     const environment = node.attrs.environment || '';
     const dataSource = node.attrs.dataSource || '';
 
@@ -161,7 +162,7 @@ export function createStitchNode(
     // Discover matched files when patterns change or project files change
     useEffect(() => {
       let cancelled = false;
-      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource: '', scenarios: '', fileOrder };
+      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource: '', scenarios: '', fileOrder, parallel };
 
       getCurrentFilePath().then((currentFilePath) => {
         return discoverFiles(config, currentFilePath);
@@ -301,7 +302,7 @@ export function createStitchNode(
     const handleRun = useCallback(async () => {
       if (runningRef.current) return;
 
-      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource, scenarios: JSON.stringify(scenarios), fileOrder };
+      const config: StitchConfig = { include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource, scenarios: JSON.stringify(scenarios), fileOrder, parallel };
       const currentFilePath = await getCurrentFilePath();
 
       abortRef.current = new AbortController();
@@ -322,7 +323,7 @@ export function createStitchNode(
         setIsRunning(false);
         abortRef.current = null;
       }
-    }, [include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, fileOrder, editor, activeEnv, envData, scenarios]);
+    }, [include, exclude, stopOnFailure, delayBetweenFiles, isolateFiles, environment, dataSource, fileOrder, parallel, editor, activeEnv, envData, scenarios]);
 
     const handleCancel = useCallback(() => {
       if (!runningRef.current) return;
@@ -493,10 +494,42 @@ export function createStitchNode(
                     step={100}
                     value={delayBetweenFiles}
                     onChange={(e) => updateAttributes({ delayBetweenFiles: parseInt(e.target.value) || 0 })}
-                    disabled={!isEditable}
-                    className={`w-16 bg-transparent text-sm font-mono text-text outline-none text-right${!isEditable ? ' opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={!isEditable || parallel}
+                    className={`w-16 bg-transparent text-sm font-mono text-text outline-none text-right${(!isEditable || parallel) ? ' opacity-50 cursor-not-allowed' : ''}`}
                   />
-                  <span className="text-sm font-mono text-comment ml-1">ms</span>
+                  <span className={`text-sm font-mono ml-1 ${parallel ? 'text-comment/40' : 'text-comment'}`}>ms</span>
+                </div>
+              </div>
+              <div className={rowClass}>
+                <div className={keyCellClass} style={{ width: 160 }}>Run mode</div>
+                <div className={valueCellClass}>
+                  <button
+                    onClick={() => isEditable && updateAttributes({ parallel: !parallel })}
+                    disabled={!isEditable}
+                    className="flex items-center gap-2 select-none focus:outline-none"
+                    style={{ cursor: isEditable ? 'pointer' : 'not-allowed', opacity: isEditable ? 1 : 0.5 }}
+                  >
+                    <span className="text-sm font-mono" style={{ color: parallel ? 'var(--syntax-comment)' : 'var(--color-accent, #6366f1)' }}>sequential</span>
+                    <div
+                      className="relative flex-shrink-0 rounded-full transition-colors"
+                      style={{
+                        width: 32,
+                        height: 18,
+                        backgroundColor: parallel ? 'var(--color-accent, #6366f1)' : 'var(--ui-line)',
+                      }}
+                    >
+                      <div
+                        className="absolute top-0.5 rounded-full transition-transform"
+                        style={{
+                          width: 14,
+                          height: 14,
+                          backgroundColor: 'white',
+                          transform: parallel ? 'translateX(16px)' : 'translateX(2px)',
+                        }}
+                      />
+                    </div>
+                    <span className="text-sm font-mono" style={{ color: parallel ? 'var(--color-accent, #6366f1)' : 'var(--syntax-comment)' }}>parallel</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -965,6 +998,11 @@ export function createStitchNode(
           default: '[]',
           parseHTML: (el: HTMLElement) => el.getAttribute('data-file-order') || '[]',
           renderHTML: (attrs: any) => ({ 'data-file-order': attrs.fileOrder }),
+        },
+        parallel: {
+          default: false,
+          parseHTML: (el: HTMLElement) => el.getAttribute('data-parallel') === 'true',
+          renderHTML: (attrs: any) => ({ 'data-parallel': String(attrs.parallel) }),
         },
       };
     },

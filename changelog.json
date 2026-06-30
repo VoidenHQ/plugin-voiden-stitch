@@ -1,5 +1,19 @@
 [
     {
+    "version": "v1.4.0",
+    "date": "30/06/2026",
+    "title": "Parallel Execution & Inherited Config",
+    "changes": {
+      "Added": [
+        "Parallel run mode: toggle the new 'Run mode' option in the stitch block to switch between sequential and parallel — files fire concurrently via Promise.allSettled so one failure never blocks others",
+        "Inherited config support: .voiden-inherited ancestor files are now automatically resolved and applied per file during a stitch run, matching the same inheritance chain behaviour as normal .void execution (closest ancestor wins, child blocks always override)"
+      ],
+      "Fixed": [
+        "Parallel toggle had no effect because the 'parallel' flag was missing from the handleRun useCallback dependency array — the stale closure always passed parallel: false to the engine regardless of what the UI showed"
+      ]
+    }
+  },
+  {
     "version": "v1.3.0",
     "date": "15/06/2026",
     "title": "Scenario Variables & File Support",

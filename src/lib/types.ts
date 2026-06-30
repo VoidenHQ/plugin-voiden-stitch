@@ -26,6 +26,9 @@ export interface StitchConfig {
   /** Explicit execution order — relative paths of matched files in the desired run order.
    *  Files listed here run first in this order; any remaining matched files run alphabetically after. */
   fileOrder: string[];
+  /** Run all matched files concurrently using Promise.allSettled instead of sequentially.
+   *  stopOnFailure and delayBetweenFiles are ignored in parallel mode. */
+  parallel: boolean;
 }
 
 /** Result for a single request section within a file */

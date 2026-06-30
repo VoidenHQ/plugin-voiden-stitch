@@ -233,200 +233,192 @@ export async function runStitch(
   );
   ctx.openResultsTab();
 
-  try {
-    for (let fileIdx = 0; fileIdx < runEntries.length; fileIdx++) {
-      if (signal.aborted) {
-        stitchStore.cancelRun();
-        break;
+  // Shared logic: execute a single file entry and write its result to the store.
+  const runOneFile = async (file: typeof runEntries[number], fileIdx: number) => {
+    stitchStore.setFileRunning(fileIdx);
+
+    const fileStart = Date.now();
+    const sections: StitchSectionResult[] = [];
+    let fileError: string | undefined;
+    let hasFailedAssertion = false;
+
+    try {
+      let content: string | null = file.content ?? null;
+      if (content == null) {
+        content = await (window as any).electron?.files?.read?.(file.source) ?? null;
       }
+      if (content == null) throw new Error(`Could not read file: ${file.source}`);
+      if (content === '') throw new Error(`File is empty (no requests): ${file.source}`);
 
-      const file = runEntries[fileIdx];
-      stitchStore.setFileRunning(fileIdx);
-
-      // If isolateFiles, restore variables to snapshot before each file
-      if (config.isolateFiles && fileIdx > 0) {
-        try {
-          await variablesApi?.writeVariables?.(variableSnapshot);
-        } catch { /* best effort */ }
-      }
-
-      const fileStart = Date.now();
-      const sections: StitchSectionResult[] = [];
-      let fileError: string | undefined;
-      let hasFailedAssertion = false;
+      let docJson = parseMarkdown(content, schema);
+      if (!docJson?.content) throw new Error(`Failed to parse void file: ${file.source}`);
 
       try {
-        // Read file content (use the content from getVoidFiles if available)
-        // Use null/undefined check (not falsy) so empty files don't trigger a spurious error.
-        let content: string | null = file.content ?? null;
-        if (content == null) {
-          content = await (window as any).electron?.files?.read?.(file.source) ?? null;
-        }
-        if (content == null) {
-          throw new Error(`Could not read file: ${file.source}`);
-        }
-        if (content === '') {
-          throw new Error(`File is empty (no requests): ${file.source}`);
-        }
-
-        // Parse to ProseMirror doc using the full schema (preserves UIDs for linked blocks)
-        let docJson = parseMarkdown(content, schema);
-        if (!docJson?.content) {
-          throw new Error(`Failed to parse void file: ${file.source}`);
-        }
-
-        // Pre-expand linkedFile nodes (inline entire referenced files).
-        try {
-          docJson = await expandLinkedFilesForStitch(docJson, allVoidFilesByPath, schema, parseMarkdown);
-        } catch (err) {
-          console.warn('[voiden-stitch] Failed to expand linked files for', file.relativePath, err);
-        }
-
-        // Pre-expand linkedBlock nodes.
-        try {
-          docJson = await expandLinkedBlocksForStitch(docJson, file.source, allVoidFilesByPath, schema, parseMarkdown);
-        } catch (err) {
-          console.warn('[voiden-stitch] Failed to expand linked blocks for', file.relativePath, err);
-        }
-
-        // Create headless TipTap editor with all registered extensions
-        const headlessEditor = new Editor({
-          extensions: allExtensions,
-          content: docJson,
-        });
-
-        try {
-          // Count sections
-          let sectionCount = 1;
-          let firstNodeIsSeparator = false;
-          let firstChild = true;
-          headlessEditor.state.doc.forEach((child: any) => {
-            if (firstChild && child.type.name === 'request-separator') firstNodeIsSeparator = true;
-            firstChild = false;
-            if (child.type.name === 'request-separator') sectionCount++;
-          });
-          const startSection = firstNodeIsSeparator ? 1 : 0;
-
-          // Execute each section
-          for (let sectionIdx = startSection; sectionIdx < sectionCount; sectionIdx++) {
-            if (signal.aborted) break;
-
-            const sectionStart = Date.now();
-            let sectionResult: StitchSectionResult;
-
-            try {
-              useResponseStore.getState().setCurrentRequestTabId('__stitch__');
-              const response = await requestOrchestrator.executeRequest(
-                headlessEditor,
-                file.scenarioEnv,
-                signal,
-                { sectionIndex: sectionIdx },
-              );
-
-              // Extract assertion results from response metadata
-              const assertionResults = extractAssertionResults(response);
-              const httpStatus: number | null = response?.status ?? response?.statusCode ?? response?.httpStatus ?? null;
-              const sectionFailed = assertionResults.failed > 0 || !!response?.error || (httpStatus !== null && httpStatus >= 400);
-              if (sectionFailed) hasFailedAssertion = true;
-
-              // Extract request/response details for inspection
-              const reqMeta = response?.requestMeta || response?.request || {};
-              const resHeaders = response?.headers;
-              const resBody = response?.body;
-              const bodyStr = typeof resBody === 'string'
-                ? resBody
-                : resBody != null
-                  ? JSON.stringify(resBody, null, 2)
-                  : undefined;
-              const reqBody = reqMeta.body || response?.requestBody;
-              const reqBodyStr = typeof reqBody === 'string'
-                ? reqBody
-                : reqBody != null
-                  ? JSON.stringify(reqBody, null, 2)
-                  : undefined;
-
-              sectionResult = {
-                sectionIndex: sectionIdx,
-                sectionLabel: response?.__sectionLabel || null,
-                status: response?.status ?? response?.statusCode ?? response?.httpStatus ?? null,
-                statusText: response?.statusText ?? response?.httpStatusText ?? null,
-                duration: Date.now() - sectionStart,
-                error: response?.error || null,
-                assertions: assertionResults,
-                requestInfo: {
-                  method: reqMeta.method || response?.method || 'GET',
-                  url: reqMeta.url || response?.url || '',
-                  headers: Array.isArray(reqMeta.headers) ? reqMeta.headers : undefined,
-                  body: reqBodyStr ? (reqBodyStr.length > 5000 ? reqBodyStr.slice(0, 5000) + '\n... (truncated)' : reqBodyStr) : undefined,
-                  bodySize: reqBodyStr?.length,
-                },
-                responseInfo: {
-                  headers: Array.isArray(resHeaders) ? resHeaders : undefined,
-                  body: bodyStr ? (bodyStr.length > 5000 ? bodyStr.slice(0, 5000) + '\n... (truncated)' : bodyStr) : undefined,
-                  bodySize: bodyStr?.length,
-                  contentType: response?.contentType,
-                },
-              };
-            } catch (err) {
-              hasFailedAssertion = true;
-              sectionResult = {
-                sectionIndex: sectionIdx,
-                sectionLabel: null,
-                status: null,
-                statusText: null,
-                duration: Date.now() - sectionStart,
-                error: err instanceof Error ? err.message : String(err),
-                assertions: { total: 0, passed: 0, failed: 0, results: [] },
-              };
-            }
-
-            sections.push(sectionResult);
-          }
-        } finally {
-          headlessEditor.destroy();
-        }
+        docJson = await expandLinkedFilesForStitch(docJson, allVoidFilesByPath, schema, parseMarkdown);
       } catch (err) {
-        fileError = err instanceof Error ? err.message : String(err);
-        hasFailedAssertion = true;
+        console.warn('[voiden-stitch] Failed to expand linked files for', file.relativePath, err);
       }
 
-      // Compute file-level assertion totals
-      const fileAssertions = sections.reduce(
-        (acc, s) => ({
-          total: acc.total + s.assertions.total,
-          passed: acc.passed + s.assertions.passed,
-          failed: acc.failed + s.assertions.failed,
-        }),
-        { total: 0, passed: 0, failed: 0 }
-      );
+      try {
+        docJson = await expandLinkedBlocksForStitch(docJson, file.source, allVoidFilesByPath, schema, parseMarkdown);
+      } catch (err) {
+        console.warn('[voiden-stitch] Failed to expand linked blocks for', file.relativePath, err);
+      }
 
-      const fileStatus: StitchFileResult['status'] = fileError
-        ? 'error'
-        : hasFailedAssertion
-          ? 'failed'
-          : 'passed';
+      try {
+        docJson = await injectInheritedBlocksForStitch(docJson, file.source, projectPath, parseMarkdown, schema);
+      } catch (err) {
+        console.warn('[voiden-stitch] Failed to inject inherited blocks for', file.relativePath, err);
+      }
 
-      stitchStore.updateFileResult(fileIdx, {
-        status: fileStatus,
-        duration: Date.now() - fileStart,
-        sections,
-        error: fileError,
-        assertions: fileAssertions,
-        scenarioVars: Object.keys(file.scenarioVars || {}).length > 0 ? file.scenarioVars : undefined,
-      });
+      const headlessEditor = new Editor({ extensions: allExtensions, content: docJson });
 
-      // Stop on failure if configured
-      if (config.stopOnFailure && hasFailedAssertion) {
-        // Mark remaining entries as skipped
-        for (let i = fileIdx + 1; i < runEntries.length; i++) {
-          stitchStore.updateFileResult(i, { status: 'skipped' });
+      try {
+        let sectionCount = 1;
+        let firstNodeIsSeparator = false;
+        let firstChild = true;
+        headlessEditor.state.doc.forEach((child: any) => {
+          if (firstChild && child.type.name === 'request-separator') firstNodeIsSeparator = true;
+          firstChild = false;
+          if (child.type.name === 'request-separator') sectionCount++;
+        });
+        const startSection = firstNodeIsSeparator ? 1 : 0;
+
+        for (let sectionIdx = startSection; sectionIdx < sectionCount; sectionIdx++) {
+          if (signal.aborted) break;
+
+          const sectionStart = Date.now();
+          let sectionResult: StitchSectionResult;
+
+          try {
+            useResponseStore.getState().setCurrentRequestTabId('__stitch__');
+            const response = await requestOrchestrator.executeRequest(
+              headlessEditor,
+              file.scenarioEnv,
+              signal,
+              { sectionIndex: sectionIdx },
+            );
+
+            const assertionResults = extractAssertionResults(response);
+            const httpStatus: number | null = response?.status ?? response?.statusCode ?? response?.httpStatus ?? null;
+            const sectionFailed = assertionResults.failed > 0 || !!response?.error || (httpStatus !== null && httpStatus >= 400);
+            if (sectionFailed) hasFailedAssertion = true;
+
+            const reqMeta = response?.requestMeta || response?.request || {};
+            const resHeaders = response?.headers;
+            const resBody = response?.body;
+            const bodyStr = typeof resBody === 'string'
+              ? resBody
+              : resBody != null ? JSON.stringify(resBody, null, 2) : undefined;
+            const reqBody = reqMeta.body || response?.requestBody;
+            const reqBodyStr = typeof reqBody === 'string'
+              ? reqBody
+              : reqBody != null ? JSON.stringify(reqBody, null, 2) : undefined;
+
+            sectionResult = {
+              sectionIndex: sectionIdx,
+              sectionLabel: response?.__sectionLabel || null,
+              status: response?.status ?? response?.statusCode ?? response?.httpStatus ?? null,
+              statusText: response?.statusText ?? response?.httpStatusText ?? null,
+              duration: Date.now() - sectionStart,
+              error: response?.error || null,
+              assertions: assertionResults,
+              requestInfo: {
+                method: reqMeta.method || response?.method || 'GET',
+                url: reqMeta.url || response?.url || '',
+                headers: Array.isArray(reqMeta.headers) ? reqMeta.headers : undefined,
+                body: reqBodyStr ? (reqBodyStr.length > 5000 ? reqBodyStr.slice(0, 5000) + '\n... (truncated)' : reqBodyStr) : undefined,
+                bodySize: reqBodyStr?.length,
+              },
+              responseInfo: {
+                headers: Array.isArray(resHeaders) ? resHeaders : undefined,
+                body: bodyStr ? (bodyStr.length > 5000 ? bodyStr.slice(0, 5000) + '\n... (truncated)' : bodyStr) : undefined,
+                bodySize: bodyStr?.length,
+                contentType: response?.contentType,
+              },
+            };
+          } catch (err) {
+            hasFailedAssertion = true;
+            sectionResult = {
+              sectionIndex: sectionIdx,
+              sectionLabel: null,
+              status: null,
+              statusText: null,
+              duration: Date.now() - sectionStart,
+              error: err instanceof Error ? err.message : String(err),
+              assertions: { total: 0, passed: 0, failed: 0, results: [] },
+            };
+          }
+
+          sections.push(sectionResult);
         }
-        break;
+      } finally {
+        headlessEditor.destroy();
       }
+    } catch (err) {
+      fileError = err instanceof Error ? err.message : String(err);
+      hasFailedAssertion = true;
+    }
 
-      // Delay between files
-      if (config.delayBetweenFiles > 0 && fileIdx < runEntries.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, config.delayBetweenFiles));
+    const fileAssertions = sections.reduce(
+      (acc, s) => ({
+        total: acc.total + s.assertions.total,
+        passed: acc.passed + s.assertions.passed,
+        failed: acc.failed + s.assertions.failed,
+      }),
+      { total: 0, passed: 0, failed: 0 }
+    );
+
+    stitchStore.updateFileResult(fileIdx, {
+      status: fileError ? 'error' : hasFailedAssertion ? 'failed' : 'passed',
+      duration: Date.now() - fileStart,
+      sections,
+      error: fileError,
+      assertions: fileAssertions,
+      scenarioVars: Object.keys(file.scenarioVars || {}).length > 0 ? file.scenarioVars : undefined,
+    });
+
+    return hasFailedAssertion;
+  };
+
+  try {
+    if (config.parallel) {
+      // Mark all files as running upfront so the UI shows them all in-flight.
+      runEntries.forEach((_, i) => stitchStore.setFileRunning(i));
+
+      await Promise.allSettled(
+        runEntries.map((file, fileIdx) => {
+          if (signal.aborted) return Promise.resolve();
+          return runOneFile(file, fileIdx);
+        })
+      );
+    } else {
+      // Sequential execution — respects stopOnFailure, isolateFiles, delayBetweenFiles.
+      for (let fileIdx = 0; fileIdx < runEntries.length; fileIdx++) {
+        if (signal.aborted) {
+          stitchStore.cancelRun();
+          break;
+        }
+
+        // If isolateFiles, restore variables to snapshot before each file
+        if (config.isolateFiles && fileIdx > 0) {
+          try {
+            await variablesApi?.writeVariables?.(variableSnapshot);
+          } catch { /* best effort */ }
+        }
+
+        const failed = await runOneFile(runEntries[fileIdx], fileIdx);
+
+        if (config.stopOnFailure && failed) {
+          for (let i = fileIdx + 1; i < runEntries.length; i++) {
+            stitchStore.updateFileResult(i, { status: 'skipped' });
+          }
+          break;
+        }
+
+        if (config.delayBetweenFiles > 0 && fileIdx < runEntries.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, config.delayBetweenFiles));
+        }
       }
     }
 
@@ -672,6 +664,97 @@ async function expandLinkedBlocksForStitch(
   }
 
   return json;
+}
+
+const NON_INHERITABLE_BLOCK_TYPES = new Set([
+  'request-separator',
+  'linkedBlock',
+  'linkedFile',
+]);
+
+/**
+ * Mirror of the core injectInheritedBlocks utility, inlined here to avoid a
+ * cross-package dynamic import that Rollup cannot resolve at build time.
+ *
+ * Walks up from the file's directory to the workspace root, collects every
+ * .voiden-inherited it finds (closest-ancestor-first), then injects blocks
+ * using the same replacement semantics as the core implementation:
+ * - child's own block always wins (no merging)
+ * - closest ancestor wins over further-away ancestors
+ * - auth with authType "inherit"/"none" is treated as absent so the ancestor's
+ *   auth can fill it in
+ */
+async function injectInheritedBlocksForStitch(
+  doc: any,
+  filePath: string,
+  workspaceRoot: string,
+  parseMarkdownFn: (markdown: string, schema: any) => any,
+  schema: any,
+): Promise<any> {
+  if (!workspaceRoot || !(window as any).electron?.files?.resolveInheritedChain) return doc;
+
+  let chain: string[];
+  try {
+    chain = await (window as any).electron.files.resolveInheritedChain(filePath, workspaceRoot);
+  } catch {
+    return doc;
+  }
+  if (!chain.length) return doc;
+
+  const localBlockTypes = new Set(
+    (doc.content ?? [])
+      .filter((b: any) => {
+        if (b.type === 'auth') {
+          const t = b.attrs?.authType;
+          return Boolean(t) && t !== 'inherit' && t !== 'none';
+        }
+        return true;
+      })
+      .map((b: any) => b.type)
+      .filter(Boolean),
+  );
+
+  const inheritedBlocks: any[] = [];
+  const claimedTypes = new Set<string>();
+
+  const markInherited = (inheritedPath: string) => (node: any): any => ({
+    ...node,
+    attrs: { ...node.attrs, importedFrom: inheritedPath },
+    content: node.content?.map(markInherited(inheritedPath)),
+  });
+
+  for (const inheritedPath of [...chain].reverse()) {
+    let markdown: string | null = null;
+    try {
+      markdown = await (window as any).electron.files.read(inheritedPath);
+    } catch {
+      continue;
+    }
+    if (!markdown) continue;
+
+    let inheritedDoc: any = null;
+    try {
+      inheritedDoc = parseMarkdownFn(markdown, schema);
+    } catch {
+      continue;
+    }
+    if (!inheritedDoc?.content) continue;
+
+    for (const block of inheritedDoc.content) {
+      if (
+        block.type &&
+        !NON_INHERITABLE_BLOCK_TYPES.has(block.type) &&
+        !localBlockTypes.has(block.type) &&
+        !claimedTypes.has(block.type)
+      ) {
+        inheritedBlocks.push(markInherited(inheritedPath)(block));
+        claimedTypes.add(block.type);
+      }
+    }
+  }
+
+  if (!inheritedBlocks.length) return doc;
+  return { ...doc, content: [...(doc.content ?? []), ...inheritedBlocks] };
 }
 
 /** Find a block node by UID (recursive search through document JSON). */
