@@ -10,12 +10,17 @@ An atom block that discovers `.void` files by glob pattern, runs each in order, 
 ---
 type: stitch
 attrs:
+  uid: "uid"
   include: '["**/*.void"]'
   exclude: '[]'
   stopOnFailure: false
   delayBetweenFiles: 0
   isolateFiles: false
   environment: ""
+  dataSource: ""
+  scenarios: "[]"
+  fileOrder: "[]"
+  parallel: false
 ---
 ```
 
@@ -29,6 +34,10 @@ attrs:
 | `delayBetweenFiles` | number (ms) | `0` | Pause between consecutive files (e.g. `500` for 500 ms). |
 | `isolateFiles` | boolean | `false` | Reset runtime variables to pre-run snapshot before each file. |
 | `environment` | string | `""` | Key of environment to use. Empty string = active environment. |
+| `dataSource` | string | `""` | Path to a CSV/JSON/YAML data file for scenario-based variable injection. |
+| `scenarios` | JSON string array | `"[]"` | Array of scenario names to run from the data source. |
+| `fileOrder` | JSON string array | `"[]"` | Explicit ordered list of file paths to run. Overrides glob discovery when set. |
+| `parallel` | boolean | `false` | Run matched files in parallel instead of sequentially. |
 
 #### Glob Pattern Rules
 
@@ -68,6 +77,7 @@ Results open automatically in the right panel (or bottom panel, depending on res
 - Per-section request details (method, URL, status code, duration)
 - Assertion breakdown: total / passed / failed with descriptions
 - Overall summary bar (files and assertions counts)
+- **Export to Excel** — use the export button in the Stitch Results sidebar to download results as an `.xlsx` spreadsheet
 
 #### How Multi-Section Files Are Handled
 
@@ -91,6 +101,7 @@ Run all user-related request files, stop on any failure.
 ---
 type: stitch
 attrs:
+  uid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
   include: '["users/**/*.void"]'
   exclude: '["users/**/draft-*.void"]'
   # No leading slash — paths are project-relative with forward slashes only
@@ -98,5 +109,9 @@ attrs:
   delayBetweenFiles: 200
   isolateFiles: true
   environment: ""
+  dataSource: ""
+  scenarios: "[]"
+  fileOrder: "[]"
+  parallel: false
 ---
 ```
