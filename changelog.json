@@ -1,4 +1,14 @@
 [
+  {
+    "version": "v1.4.1",
+    "date": "03/07/2026",
+    "title": "Skill Documentation Update",
+    "changes": {
+      "Improved": [
+        "AI skill documentation updated with missing stitch block attrs (uid, parallelRun, globalVariables, scenarioVariables) and Excel export capability"
+      ]
+    }
+  },
     {
     "version": "v1.4.0",
     "date": "30/06/2026",
