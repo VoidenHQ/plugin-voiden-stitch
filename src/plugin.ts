@@ -55,6 +55,15 @@ export default function createVoidenStitchPlugin(context: CorePluginContext) {
         'stitch': 'Stitch Runner',
       });
 
+      // Root path for now — a per-block deep link path will be added later.
+      (context as any).registerBlockOutlineMeta({
+        stitch: {
+          label: 'Stitch Runner',
+          icon: 'Layers',
+          docsUrl: 'https://docs.voiden.md/docs/core-features-section/voiden-blocks/stitch-result',
+        },
+      });
+
       // 4. Register block owner for paste handling
       context.paste.registerBlockOwner({
         blockType: 'stitch',
