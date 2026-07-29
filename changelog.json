@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.4.3",
+    "date": "29/07/2026",
+    "title": "Inline Block Help",
+    "changes": {
+      "Added": [
+        "The Stitch Runner block now shows an inline \"?\" help tooltip in its header, matching the other request blocks"
+      ]
+    }
+  },
+  {
     "version": "v1.4.2",
     "date": "16/07/2026",
     "title": "Block Documentation Link",

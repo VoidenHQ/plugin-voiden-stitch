@@ -367,7 +367,7 @@ export function createStitchNode(
             }
           }}
         >
-          <RequestBlockHeader title="STITCH RUNNER" withBorder={false} editor={editor} />
+          <RequestBlockHeader title="STITCH RUNNER" withBorder={false} editor={editor} blockType="stitch" />
 
           <div className="p-4 space-y-4">
             {/* Include patterns — with folder picker button */}

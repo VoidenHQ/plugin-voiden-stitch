@@ -6,6 +6,7 @@
  */
 
 import type { CorePluginContext } from '@voiden/sdk/ui';
+import { StitchHelp } from './help/index';
 
 export default function createVoidenStitchPlugin(context: CorePluginContext) {
   return {
@@ -62,6 +63,11 @@ export default function createVoidenStitchPlugin(context: CorePluginContext) {
           icon: 'Layers',
           docsUrl: 'https://docs.voiden.md/docs/core-features-section/voiden-blocks/stitch-result',
         },
+      });
+
+      // Inline block "?" help tooltip (RequestBlockHeader)
+      (context as any).registerBlockHelp?.({
+        stitch: StitchHelp,
       });
 
       // 4. Register block owner for paste handling
