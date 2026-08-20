@@ -22,6 +22,7 @@ import {
   FileText,
   Circle,
   Search,
+  Filter,
   Copy,
   ExternalLink,
   Download,
@@ -31,6 +32,7 @@ import {
 import { stitchStore } from '../lib/stitchStore';
 import type { StitchRunState, StitchFileResult, StitchSectionResult, StitchHistoryEntry } from '../lib/types';
 import { exportStitchToExcel } from '../lib/exportExcel';
+import { exportStitchToMarkdown, isSectionFailed, isFileFailed } from '../lib/exportReport';
 import { loadStitchHistory, deleteStitchHistoryEntry, clearStitchHistory } from '../lib/stitchHistory';
 
 /** Generate a simple cURL command from request info. */
@@ -179,8 +181,7 @@ const SectionRow = ({ section, defaultExpanded }: { section: StitchSectionResult
   const [copiedReqHeaders, setCopiedReqHeaders] = useState(false);
   const [copiedResHeaders, setCopiedResHeaders] = useState(false);
   const hasAssertions = section.assertions.results.length > 0;
-  const httpFailed = section.status !== null && section.status >= 400;
-  const hasFailed = section.assertions.failed > 0 || !!section.error || httpFailed;
+  const hasFailed = isSectionFailed(section);
   const hasDetails = hasAssertions || !!section.error || !!section.requestInfo || !!section.responseInfo;
   const borderColor = hasFailed ? 'var(--error, #f87171)' : section.error ? 'var(--warning, #facc15)' : 'var(--success, #4ade80)';
 
@@ -458,10 +459,11 @@ const SectionRow = ({ section, defaultExpanded }: { section: StitchSectionResult
 };
 
 /** Collapsible file row — matches the response panel multi-section header style. */
-const FileRow = ({ file, defaultExpanded, onOpenFile }: { file: StitchFileResult; defaultExpanded?: boolean; onOpenFile?: (path: string) => void }) => {
+const FileRow = ({ file, defaultExpanded, onOpenFile, failedOnly }: { file: StitchFileResult; defaultExpanded?: boolean; onOpenFile?: (path: string) => void; failedOnly?: boolean }) => {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [varsOpen, setVarsOpen] = useState(false);
-  const hasDetails = file.sections.length > 0 || !!file.error;
+  const visibleSections = failedOnly ? file.sections.filter(isSectionFailed) : file.sections;
+  const hasDetails = visibleSections.length > 0 || !!file.error;
   const vars = file.scenarioVars;
   const varEntries = vars ? Object.entries(vars) : [];
 
@@ -550,7 +552,7 @@ const FileRow = ({ file, defaultExpanded, onOpenFile }: { file: StitchFileResult
           {file.error && (
             <div className="px-4 py-2 text-[11px] text-red-400 font-mono break-all bg-editor">{file.error}</div>
           )}
-          {file.sections.map((section, i) => (
+          {visibleSections.map((section, i) => (
             <SectionRow key={i} section={section} defaultExpanded={defaultExpanded} />
           ))}
         </div>
@@ -663,13 +665,14 @@ const RunResultsView = ({
   const [allExpanded, setAllExpanded] = useState(false);
   const [filterText, setFilterText] = useState('');
   const [showFilter, setShowFilter] = useState(false);
+  const [failedOnly, setFailedOnly] = useState(false);
 
   useEffect(() => {
     if (sharedScroll) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [run.currentFileIndex, sharedScroll]);
 
-  const filteredFiles = useMemo(() => {
+  const textFilteredFiles = useMemo(() => {
     if (!filterText.trim()) return run.files;
     const q = filterText.toLowerCase();
     return run.files.filter((file) => {
@@ -681,6 +684,11 @@ const RunResultsView = ({
       );
     });
   }, [run.files, filterText]);
+
+  const filteredFiles = useMemo(() => {
+    if (!failedOnly) return textFilteredFiles;
+    return textFilteredFiles.filter(isFileFailed);
+  }, [textFilteredFiles, failedOnly]);
 
   const hasFailures = run.summary.failedFiles + run.summary.errorFiles > 0;
   const allPassed = isDone && !hasFailures;
@@ -707,6 +715,14 @@ const RunResultsView = ({
           {run.files.length > 0 && (
             <>
               <button
+                className={`p-1 transition-colors rounded ${failedOnly ? 'text-red-400' : 'text-comment hover:text-text'}`}
+                title={failedOnly ? 'Showing failed only — click to show all' : 'Show failed only'}
+                onClick={() => setFailedOnly((v) => !v)}
+                style={{ cursor: 'pointer' }}
+              >
+                <Filter size={12} />
+              </button>
+              <button
                 className={`p-1 transition-colors rounded ${showFilter ? 'text-accent' : 'text-comment hover:text-text'}`}
                 title="Filter results"
                 onClick={() => setShowFilter(!showFilter)}
@@ -726,6 +742,23 @@ const RunResultsView = ({
           )}
         </div>
       </div>
+
+      {/* Failed-only banner — shown whenever the toggle is active, independent of the text filter bar */}
+      {failedOnly && (
+        <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border bg-red-400/5 flex-shrink-0">
+          <Filter size={10} className="text-red-400 flex-shrink-0" />
+          <span className="text-[10px] text-red-400">
+            Showing failed only — {filteredFiles.length}/{run.files.length} file{run.files.length !== 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={() => setFailedOnly(false)}
+            className="ml-auto p-0.5 text-comment hover:text-text transition-colors rounded"
+            style={{ cursor: 'pointer' }}
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
 
       {/* Filter bar */}
       {showFilter && (
@@ -794,8 +827,19 @@ const RunResultsView = ({
         {run.files.length === 0 && (
           <div className="p-4 text-comment text-center text-[11px]">No files in this run.</div>
         )}
+        {run.files.length > 0 && filteredFiles.length === 0 && (
+          <div className="p-4 text-comment text-center text-[11px]">
+            {failedOnly ? 'Nothing failed — all matching results passed.' : 'No results match your filter.'}
+          </div>
+        )}
         {filteredFiles.map((file, i) => (
-          <FileRow key={`${file.filePath}-${i}`} file={file} defaultExpanded={allExpanded} onOpenFile={onOpenFile} />
+          <FileRow
+            key={`${file.filePath}-${i}`}
+            file={file}
+            defaultExpanded={allExpanded || failedOnly}
+            onOpenFile={onOpenFile}
+            failedOnly={failedOnly}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -923,6 +967,16 @@ export const StitchResultsSidebar = ({ tabId, embedded = false }: { tabId?: stri
           {/* Current run actions — only in normal view */}
           {!showHistory && run.files.length > 0 && (
             <>
+              {isDone && (
+                <button
+                  onClick={() => exportStitchToMarkdown(run)}
+                  className="p-1.5 text-comment hover:text-text transition-colors rounded"
+                  title="Export Markdown report"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <FileText size={14} />
+                </button>
+              )}
               {isDone && (
                 <button
                   onClick={() => exportStitchToExcel(run)}
