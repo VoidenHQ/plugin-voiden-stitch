@@ -22,7 +22,7 @@ import {
   FileText,
   Circle,
   Search,
-  Filter,
+  XCircle,
   Copy,
   ExternalLink,
   Download,
@@ -720,7 +720,7 @@ const RunResultsView = ({
                 onClick={() => setFailedOnly((v) => !v)}
                 style={{ cursor: 'pointer' }}
               >
-                <Filter size={12} />
+                <XCircle size={12} />
               </button>
               <button
                 className={`p-1 transition-colors rounded ${showFilter ? 'text-accent' : 'text-comment hover:text-text'}`}
@@ -746,7 +746,7 @@ const RunResultsView = ({
       {/* Failed-only banner — shown whenever the toggle is active, independent of the text filter bar */}
       {failedOnly && (
         <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border bg-red-400/5 flex-shrink-0">
-          <Filter size={10} className="text-red-400 flex-shrink-0" />
+          <XCircle size={10} className="text-red-400 flex-shrink-0" />
           <span className="text-[10px] text-red-400">
             Showing failed only — {filteredFiles.length}/{run.files.length} file{run.files.length !== 1 ? 's' : ''}
           </span>
