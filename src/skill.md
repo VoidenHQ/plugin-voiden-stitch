@@ -2,6 +2,8 @@
 
 Runs multiple `.void` files in batch and aggregates assertion results into a single report. Insert with `/stitch`.
 
+> **Not singleton:** `stitch` blocks are explicitly allowed multiple times per file if you need more than one batch-run configuration (e.g. different glob patterns for different test suites).
+
 ### stitch — Stitch Runner Block
 
 An atom block that discovers `.void` files by glob pattern, runs each in order, and streams results to the Stitch Results panel.

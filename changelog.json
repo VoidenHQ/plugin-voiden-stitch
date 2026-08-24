@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.4.4",
+    "date": "24/08/2026",
+    "title": "Docs: Skill Now Clarifies stitch Is Not Singleton",
+    "changes": {
+      "Fixed": [
+        "The bundled skill.md now explicitly documents that stitch blocks are NOT singleton — multiple stitch runner blocks per file (e.g. for separate test suites) is intentional. Previously unstated, which risked an AI agent incorrectly removing a valid second stitch block."
+      ]
+    }
+  },
+  {
     "version": "v1.4.3",
     "date": "29/07/2026",
     "title": "Inline Block Help",
@@ -29,7 +39,7 @@
       ]
     }
   },
-    {
+  {
     "version": "v1.4.0",
     "date": "30/06/2026",
     "title": "Parallel Execution & Inherited Config",
