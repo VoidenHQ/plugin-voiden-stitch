@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.4.5",
+    "date": "27/08/2026",
+    "title": "linkedBlock Pointer Guard",
+    "changes": {
+      "Fixed": [
+        "findBlockByUid (used to resolve linkedBlock references during a stitch run) could resolve a linkedBlock/linkedFile wrapper node as if it were the real content it points to, if its own uid ever collided with the blockUid being searched for — silently corrupting whatever the stitch run imported. Now excludes linkedBlock/linkedFile from ever being returned as a match, matching the same guard already applied elsewhere in the app."
+      ]
+    }
+  },
+  {
     "version": "v1.4.4",
     "date": "24/08/2026",
     "title": "Docs: Skill Now Clarifies stitch Is Not Singleton",
