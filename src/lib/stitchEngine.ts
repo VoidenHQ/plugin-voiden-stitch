@@ -757,9 +757,16 @@ async function injectInheritedBlocksForStitch(
   return { ...doc, content: [...(doc.content ?? []), ...inheritedBlocks] };
 }
 
+// linkedBlock/linkedFile are pointers, not content — never resolve to one of
+// these even if its own `uid` happens to collide with the `blockUid` being
+// searched for (mirrors the same guard in BlockLink.tsx / nodeProcessing.ts /
+// linkedBlocks.ts). Matching a pointer node here would hand back a
+// linkedBlock as if it were resolved content instead of failing loudly.
+const NON_TARGETABLE_TYPES = new Set(["linkedBlock", "linkedFile"]);
+
 /** Find a block node by UID (recursive search through document JSON). */
 function findBlockByUid(doc: any, uid: string): any | null {
-  if (doc.attrs?.uid === uid) return doc;
+  if (doc.attrs?.uid === uid && !NON_TARGETABLE_TYPES.has(doc.type)) return doc;
   if (doc.content && Array.isArray(doc.content)) {
     for (const child of doc.content) {
       const found = findBlockByUid(child, uid);
