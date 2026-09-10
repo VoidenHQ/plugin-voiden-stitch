@@ -24,6 +24,32 @@ function makeRelativePath(source: string, projectPath: string): string {
   return source.split(/[/\\]/).pop() || source;
 }
 
+/**
+ * Mirror of VoidenEditor.tsx's sanitizeDoc — strips text nodes that are empty
+ * or whitespace-only. ProseMirror rejects those outright ("Empty text nodes
+ * are not allowed"), and TipTap's fallback for a rejected content tree is a
+ * blank document, silently discarding everything else in it. The live editor
+ * always sanitizes parsed markdown before loading it for exactly this reason;
+ * this headless engine needs the same pass before constructing its own Editor.
+ */
+function sanitizeDoc(node: any): any {
+  if (!node || typeof node !== 'object') return node;
+
+  if (node.type === 'paragraph' && typeof node.content === 'number') {
+    node.content = [{ type: 'text', text: String(node.content) }];
+  }
+
+  if (node.type === 'text' && (!node.text || (typeof node.text === 'string' && node.text.trim() === ''))) {
+    return null;
+  }
+
+  if (Array.isArray(node.content)) {
+    node.content = node.content.map(sanitizeDoc).filter(Boolean);
+  }
+
+  return node;
+}
+
 /** Minimal glob matcher supporting * and ** patterns. */
 function matchGlob(pattern: string, filePath: string): boolean {
   // Normalize separators
@@ -271,6 +297,16 @@ export async function runStitch(
         console.warn('[voiden-stitch] Failed to inject inherited blocks for', file.relativePath, err);
       }
 
+      // Mirror VoidenEditor.tsx's sanitizeDoc: ProseMirror hard-rejects any text
+      // node whose text is empty/whitespace-only ("Empty text nodes are not
+      // allowed"), and TipTap responds to that by silently discarding the whole
+      // document and falling back to a blank one — not just the offending node.
+      // The live editor always sanitizes parsed markdown before loading it for
+      // exactly this reason; this headless editor didn't, so any file whose
+      // markdown produced one blank text node anywhere lost its entire content
+      // (every request in it) without any visible error.
+      docJson = sanitizeDoc(docJson);
+
       const headlessEditor = new Editor({ extensions: allExtensions, content: docJson });
 
       try {
@@ -338,6 +374,17 @@ export async function runStitch(
               },
             };
           } catch (err) {
+            // Documentation-only section (e.g. a heading/paragraph preamble
+            // before the first request-separator) — skip it silently, same
+            // as the live editor's "Run All" (see useSendRequest.ts), rather
+            // than recording it as a failed section. Matched by name rather
+            // than `instanceof NotARequestError`: this plugin is loaded as
+            // its own separate bundle via a runtime dynamic import of the
+            // app's module, and that cross-bundle class reference isn't
+            // reliably the same object identity — `.name` is.
+            if (err instanceof Error && err.name === 'NotARequestError') {
+              continue;
+            }
             hasFailedAssertion = true;
             sectionResult = {
               sectionIndex: sectionIdx,

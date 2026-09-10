@@ -1,5 +1,21 @@
 [
   {
+    "version": "v1.4.6",
+    "date": "10/09/2026",
+    "title": "Failed-Only Filter and Markdown Report Export",
+    "changes": {
+      "Added": [
+        "A \"Failed only\" toggle in the results sidebar's sub-toolbar (next to the existing text search) — when active, the file list only shows files with a failure, and expanded files only show their failed sections, auto-expanded so failures are visible immediately. Combines with the existing text filter (AND). Closes #546.",
+        "A Markdown report export, alongside the existing Excel export: summary tables (files/assertions, counts + %), a status-code distribution table, an explicit callout and list for requests that got a 2xx HTTP status but are still counted failed (assertion failures) — the exact scenario reported in #546 — and a dedicated \"Failed Endpoints\" section with per-section error/assertion detail plus a full file-status table.",
+        "isSectionFailed/isFileFailed are now shared helpers so the sidebar's coloring/filtering and the report's failure counting can't drift apart from each other."
+      ],
+      "Fixed": [
+        "A stitched document whose parsed markdown produced even one blank/whitespace-only text node anywhere lost its entire content (every request in it) with no visible error — ProseMirror hard-rejects empty text nodes, and TipTap's fallback for a rejected content tree is a silently blank document. The headless engine now sanitizes parsed markdown before loading it, mirroring the live editor's own sanitizeDoc pass, which has always done this for exactly this reason.",
+        "A documentation-only section (e.g. a heading/paragraph preamble before the first request-separator) was recorded as a failed section during a stitch run instead of being skipped, the same way the live editor's \"Run All\" already skips it."
+      ]
+    }
+  },
+  {
     "version": "v1.4.5",
     "date": "27/08/2026",
     "title": "linkedBlock Pointer Guard",
