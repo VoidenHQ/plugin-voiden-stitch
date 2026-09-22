@@ -1,7 +1,7 @@
 {
   "id": "voiden-stitch",
   "name": "Voiden Stitch",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "voidenVersion": ">=2.1.0",
   "description": "Batch-run multiple .void files as a stitch with aggregated assertion results, variable isolation, and sequential execution",
   "author": "Voiden Team",

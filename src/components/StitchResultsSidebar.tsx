@@ -1008,7 +1008,7 @@ export const StitchResultsSidebar = ({ tabId, embedded = false }: { tabId?: stri
               <span className="text-[10px] text-comment">{historyEntries.length} run{historyEntries.length !== 1 ? 's' : ''}</span>
               <button
                 onClick={handleClearAll}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-accent text-text hover:opacity-90 transition-opacity"
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium text-text hover:opacity-90 transition-opacity"
                 style={{ cursor: 'pointer' }}
               >
                 <Trash2 size={11} />

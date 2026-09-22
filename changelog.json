@@ -1,5 +1,15 @@
 [
   {
+    "version": "v1.4.7",
+    "date": "22/09/2026",
+    "title": "Results Sidebar Button Fix",
+    "changes": {
+      "Fixed": [
+        "Removed the bg-accent background from the \"Clear all\" button in the results sidebar's history header, which was causing a visual issue."
+      ]
+    }
+  },
+  {
     "version": "v1.4.6",
     "date": "10/09/2026",
     "title": "Failed-Only Filter and Markdown Report Export",
