@@ -7,6 +7,7 @@
 
 import type { StitchConfig, StitchFileResult, StitchSectionResult, AssertionResult } from './types';
 import { stitchStore } from './stitchStore';
+import { isSectionFailed } from './sectionOutcome';
 import { Editor, getSchema } from '@tiptap/core';
 
 /**
@@ -266,7 +267,7 @@ export async function runStitch(
     const fileStart = Date.now();
     const sections: StitchSectionResult[] = [];
     let fileError: string | undefined;
-    let hasFailedAssertion = false;
+    let hasFailedSection = false;
 
     try {
       let content: string | null = file.content ?? null;
@@ -336,9 +337,6 @@ export async function runStitch(
             );
 
             const assertionResults = extractAssertionResults(response);
-            const httpStatus: number | null = response?.status ?? response?.statusCode ?? response?.httpStatus ?? null;
-            const sectionFailed = assertionResults.failed > 0 || !!response?.error || (httpStatus !== null && httpStatus >= 400);
-            if (sectionFailed) hasFailedAssertion = true;
 
             const reqMeta = response?.requestMeta || response?.request || {};
             const resHeaders = response?.headers;
@@ -385,7 +383,6 @@ export async function runStitch(
             if (err instanceof Error && err.name === 'NotARequestError') {
               continue;
             }
-            hasFailedAssertion = true;
             sectionResult = {
               sectionIndex: sectionIdx,
               sectionLabel: null,
@@ -397,6 +394,7 @@ export async function runStitch(
             };
           }
 
+          if (isSectionFailed(sectionResult)) hasFailedSection = true;
           sections.push(sectionResult);
         }
       } finally {
@@ -404,7 +402,7 @@ export async function runStitch(
       }
     } catch (err) {
       fileError = err instanceof Error ? err.message : String(err);
-      hasFailedAssertion = true;
+      hasFailedSection = true;
     }
 
     const fileAssertions = sections.reduce(
@@ -417,7 +415,7 @@ export async function runStitch(
     );
 
     stitchStore.updateFileResult(fileIdx, {
-      status: fileError ? 'error' : hasFailedAssertion ? 'failed' : 'passed',
+      status: fileError ? 'error' : hasFailedSection ? 'failed' : 'passed',
       duration: Date.now() - fileStart,
       sections,
       error: fileError,
@@ -425,7 +423,7 @@ export async function runStitch(
       scenarioVars: Object.keys(file.scenarioVars || {}).length > 0 ? file.scenarioVars : undefined,
     });
 
-    return hasFailedAssertion;
+    return hasFailedSection;
   };
 
   try {
