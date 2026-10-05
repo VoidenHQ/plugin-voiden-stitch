@@ -8,6 +8,7 @@
  */
 
 import type { StitchRunState, StitchFileResult, StitchSectionResult } from './types';
+import { isSectionFailed, isFileFailed } from './sectionOutcome';
 
 // ─── Shared helpers (mirrors exportExcel.ts's local copies) ────────────────────
 
@@ -20,18 +21,6 @@ function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
-}
-
-/** A section is "failed" the same way the results sidebar decides it (assertions, transport error, or HTTP >= 400). */
-export function isSectionFailed(section: StitchSectionResult): boolean {
-  const httpFailed = section.status !== null && section.status >= 400;
-  return section.assertions.failed > 0 || !!section.error || httpFailed;
-}
-
-/** A file is "failed" for report/filter purposes if its own status says so, or any section inside it failed. */
-export function isFileFailed(file: StitchFileResult): boolean {
-  if (file.status === 'failed' || file.status === 'error') return true;
-  return file.sections.some(isSectionFailed);
 }
 
 function escapeMd(text: string): string {

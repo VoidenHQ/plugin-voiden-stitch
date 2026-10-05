@@ -32,7 +32,8 @@ import {
 import { stitchStore } from '../lib/stitchStore';
 import type { StitchRunState, StitchFileResult, StitchSectionResult, StitchHistoryEntry } from '../lib/types';
 import { exportStitchToExcel } from '../lib/exportExcel';
-import { exportStitchToMarkdown, isSectionFailed, isFileFailed } from '../lib/exportReport';
+import { exportStitchToMarkdown } from '../lib/exportReport';
+import { isSectionFailed, isFileFailed } from '../lib/sectionOutcome';
 import { loadStitchHistory, deleteStitchHistoryEntry, clearStitchHistory } from '../lib/stitchHistory';
 
 /** Generate a simple cURL command from request info. */
