@@ -1,5 +1,16 @@
 [
   {
+    "version": "v1.4.8",
+    "date": "05/10/2026",
+    "title": "Assertions Decide Pass/Fail for Expected HTTP Errors",
+    "changes": {
+      "Changed": [
+        "A request with assertions now passes or fails on its assertions alone, so a test that expects a 4xx/5xx response passes when its assertions pass — contributed by [@vianmangal](https://github.com/vianmangal)",
+        "Requests without assertions still fail on a 4xx/5xx response, and failed assertions or request errors still fail."
+      ]
+    }
+  },
+  {
     "version": "v1.4.7",
     "date": "22/09/2026",
     "title": "Results Sidebar Button Fix",
